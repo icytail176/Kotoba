@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct KotobaApp: App {
@@ -13,5 +14,6 @@ struct KotobaApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: KotobaSchema.models)
     }
 }

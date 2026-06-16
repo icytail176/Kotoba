@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		B3F9A1652FE170000055E8F7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B3F9A13E2FE14BD90055E8F7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B3F9A1452FE14BD90055E8F7;
+			remoteInfo = Kotoba;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B3F9A1462FE14BD90055E8F7 /* Kotoba.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kotoba.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B3F9A1612FE170000055E8F7 /* KotobaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KotobaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +27,52 @@
 			path = Kotoba;
 			sourceTree = "<group>";
 		};
+		B3F9A1632FE170000055E8F7 /* KotobaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = KotobaTests;
+			sourceTree = "<group>";
+		};
+		B3F9A16B2FE170000055E8F7 /* Kotoba/Models */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/Models;
+			sourceTree = "<group>";
+		};
+		B3F9A16C2FE170000055E8F7 /* Kotoba/PreviewSupport */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/PreviewSupport;
+			sourceTree = "<group>";
+		};
+		B3F9A16D2FE170000055E8F7 /* Kotoba/Services */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/Services;
+			sourceTree = "<group>";
+		};
+		B3F9A16E2FE170000055E8F7 /* Kotoba/Features/Study */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/Features/Study;
+			sourceTree = "<group>";
+		};
+		B3F9A16F2FE170000055E8F7 /* Kotoba/Components */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/Components;
+			sourceTree = "<group>";
+		};
+		B3F9A1702FE170000055E8F7 /* Kotoba/Features/Import */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Kotoba/Features/Import;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B3F9A1432FE14BD90055E8F7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B3F9A15E2FE170000055E8F7 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +86,13 @@
 			isa = PBXGroup;
 			children = (
 				B3F9A1482FE14BD90055E8F7 /* Kotoba */,
+				B3F9A1632FE170000055E8F7 /* KotobaTests */,
+				B3F9A16B2FE170000055E8F7 /* Kotoba/Models */,
+				B3F9A16C2FE170000055E8F7 /* Kotoba/PreviewSupport */,
+				B3F9A16D2FE170000055E8F7 /* Kotoba/Services */,
+				B3F9A16E2FE170000055E8F7 /* Kotoba/Features/Study */,
+				B3F9A16F2FE170000055E8F7 /* Kotoba/Components */,
+				B3F9A1702FE170000055E8F7 /* Kotoba/Features/Import */,
 				B3F9A1472FE14BD90055E8F7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				B3F9A1462FE14BD90055E8F7 /* Kotoba.app */,
+				B3F9A1612FE170000055E8F7 /* KotobaTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +131,35 @@
 			productReference = B3F9A1462FE14BD90055E8F7 /* Kotoba.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B3F9A1602FE170000055E8F7 /* KotobaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B3F9A1682FE170000055E8F7 /* Build configuration list for PBXNativeTarget "KotobaTests" */;
+			buildPhases = (
+				B3F9A15D2FE170000055E8F7 /* Sources */,
+				B3F9A15E2FE170000055E8F7 /* Frameworks */,
+				B3F9A15F2FE170000055E8F7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B3F9A1662FE170000055E8F7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B3F9A1632FE170000055E8F7 /* KotobaTests */,
+				B3F9A16B2FE170000055E8F7 /* Kotoba/Models */,
+				B3F9A16C2FE170000055E8F7 /* Kotoba/PreviewSupport */,
+				B3F9A16D2FE170000055E8F7 /* Kotoba/Services */,
+				B3F9A16E2FE170000055E8F7 /* Kotoba/Features/Study */,
+				B3F9A16F2FE170000055E8F7 /* Kotoba/Components */,
+				B3F9A1702FE170000055E8F7 /* Kotoba/Features/Import */,
+			);
+			name = KotobaTests;
+			packageProductDependencies = (
+			);
+			productName = KotobaTests;
+			productReference = B3F9A1612FE170000055E8F7 /* KotobaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +172,10 @@
 				TargetAttributes = {
 					B3F9A1452FE14BD90055E8F7 = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					B3F9A1602FE170000055E8F7 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = B3F9A1452FE14BD90055E8F7;
 					};
 				};
 			};
@@ -100,12 +194,20 @@
 			projectRoot = "";
 			targets = (
 				B3F9A1452FE14BD90055E8F7 /* Kotoba */,
+				B3F9A1602FE170000055E8F7 /* KotobaTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B3F9A1442FE14BD90055E8F7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B3F9A15F2FE170000055E8F7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +224,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B3F9A15D2FE170000055E8F7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B3F9A1662FE170000055E8F7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B3F9A1452FE14BD90055E8F7 /* Kotoba */;
+			targetProxy = B3F9A1652FE170000055E8F7 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B3F9A14F2FE14BD90055E8F7 /* Debug */ = {
@@ -303,6 +420,44 @@
 			};
 			name = Release;
 		};
+		B3F9A1692FE170000055E8F7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.KotobaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B3F9A16A2FE170000055E8F7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.KotobaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -320,6 +475,15 @@
 			buildConfigurations = (
 				B3F9A1522FE14BD90055E8F7 /* Debug */,
 				B3F9A1532FE14BD90055E8F7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B3F9A1682FE170000055E8F7 /* Build configuration list for PBXNativeTarget "KotobaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B3F9A1692FE170000055E8F7 /* Debug */,
+				B3F9A16A2FE170000055E8F7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
