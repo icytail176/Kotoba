@@ -5,9 +5,12 @@
 //  Created by Codex on 2026/6/16.
 //
 
+import SwiftData
 import SwiftUI
 
 struct VocabularyImportResultView: View {
+    @Environment(\.modelContext) private var modelContext
+    @State private var conjugationStats: ConjugationStats?
     let result: VocabularyImportResult
     let onDone: () -> Void
 
@@ -20,6 +23,12 @@ struct VocabularyImportResultView: View {
                 Text("已完成本次 CSV 导入，错误行已跳过。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                if let wordBookName = result.wordBookName {
+                    Text("目标词书：\(wordBookName)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
@@ -34,6 +43,25 @@ struct VocabularyImportResultView: View {
                 }
             }
 
+            if let conjugationStats {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("活用数据")
+                        .font(.headline)
+
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                        GridRow {
+                            ResultCell(title: "可能需要", value: conjugationStats.possibleCount)
+                            ResultCell(title: "本地已处理", value: conjugationStats.localRuleCount)
+                        }
+
+                        GridRow {
+                            ResultCell(title: "待补全", value: conjugationStats.pendingCount)
+                            ResultCell(title: "需要检查", value: conjugationStats.needsReviewCount)
+                        }
+                    }
+                }
+            }
+
             HStack {
                 Spacer()
 
@@ -43,6 +71,28 @@ struct VocabularyImportResultView: View {
         }
         .padding(24)
         .frame(minWidth: 420)
+        .task(id: result.wordBookID) {
+            loadConjugationStats()
+        }
+    }
+
+    private func loadConjugationStats() {
+        guard let wordBookID = result.wordBookID else {
+            conjugationStats = nil
+            return
+        }
+
+        do {
+            let books = try modelContext.fetch(FetchDescriptor<WordBook>())
+            guard let wordBook = books.first(where: { $0.id == wordBookID }) else {
+                conjugationStats = nil
+                return
+            }
+
+            conjugationStats = try ConjugationStatsService().stats(for: wordBook, in: modelContext)
+        } catch {
+            conjugationStats = nil
+        }
     }
 }
 
@@ -76,7 +126,9 @@ private struct ResultCell: View {
             insertedCount: 8,
             updatedCount: 2,
             skippedDuplicateCount: 1,
-            ignoredErrorCount: 3
+            ignoredErrorCount: 3,
+            wordBookID: UUID(),
+            wordBookName: "N3 常用词"
         ),
         onDone: {}
     )

@@ -11,6 +11,7 @@ struct WordbookFilterBar: View {
     @Binding var filters: WordbookFilters
     let optionSets: WordbookOptionSets
     let isFiltering: Bool
+    let searchFieldFocus: FocusState<Bool>.Binding
     let onClear: () -> Void
     let onAdd: () -> Void
     let onImport: () -> Void
@@ -20,7 +21,8 @@ struct WordbookFilterBar: View {
             HStack(spacing: 10) {
                 TextField("搜索单词、假名或中文释义", text: $filters.searchText)
                     .textFieldStyle(.roundedBorder)
-                    .frame(minWidth: 220)
+                    .focused(searchFieldFocus)
+                    .frame(minWidth: 160, maxWidth: .infinity)
 
                 Toggle("仅收藏", isOn: $filters.favoritesOnly)
                     .toggleStyle(.checkbox)
@@ -38,6 +40,15 @@ struct WordbookFilterBar: View {
             }
 
             HStack(spacing: 10) {
+                Picker("词书", selection: $filters.wordBookID) {
+                    Text("当前词书").tag(WordbookFilters.currentWordBookValue)
+                    Text("全部词书").tag(WordbookFilterValue.all.rawValue)
+                    ForEach(optionSets.wordBooks) { wordBook in
+                        Text(wordBook.name).tag(wordBook.id.uuidString)
+                    }
+                }
+                .frame(minWidth: 120, maxWidth: 180)
+
                 filterPicker("JLPT", selection: $filters.jlptLevel, values: optionSets.jlptLevels)
                 filterPicker("词性", selection: $filters.partOfSpeech, values: optionSets.partsOfSpeech)
                 filterPicker("标签", selection: $filters.tag, values: optionSets.tags)
@@ -48,7 +59,7 @@ struct WordbookFilterBar: View {
                         Text(state.displayName).tag(state.rawValue)
                     }
                 }
-                .frame(maxWidth: 160)
+                .frame(minWidth: 110, maxWidth: 140)
 
                 Spacer()
 
@@ -72,23 +83,33 @@ struct WordbookFilterBar: View {
                 Text(value).tag(value)
             }
         }
-        .frame(maxWidth: 150)
+        .frame(minWidth: 90, maxWidth: 130)
     }
 }
 
 #Preview {
-    WordbookFilterBar(
-        filters: .constant(WordbookFilters()),
-        optionSets: WordbookOptionSets(
-            jlptLevels: ["N5", "N4"],
-            partsOfSpeech: ["名词", "动词"],
-            tags: ["学校", "生活"],
-            learningStates: [.new, .review]
-        ),
-        isFiltering: false,
-        onClear: {},
-        onAdd: {},
-        onImport: {}
-    )
-    .frame(width: 860)
+    WordbookFilterBarPreview()
+        .frame(width: 860)
+}
+
+private struct WordbookFilterBarPreview: View {
+    @FocusState private var isSearchFieldFocused: Bool
+
+    var body: some View {
+        WordbookFilterBar(
+            filters: .constant(WordbookFilters()),
+            optionSets: WordbookOptionSets(
+                wordBooks: [WordBookOption(id: UUID(), name: "示例词书")],
+                jlptLevels: ["N5", "N4"],
+                partsOfSpeech: ["名词", "动词"],
+                tags: ["学校", "生活"],
+                learningStates: [.new, .review]
+            ),
+            isFiltering: false,
+            searchFieldFocus: $isSearchFieldFocused,
+            onClear: {},
+            onAdd: {},
+            onImport: {}
+        )
+    }
 }

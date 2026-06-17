@@ -10,6 +10,7 @@ import Foundation
 enum AppSection: String, CaseIterable, Identifiable {
     case today
     case wordbook
+    case wordBooks
     case statistics
     case settings
 
@@ -21,6 +22,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "今日学习"
         case .wordbook:
             "单词本"
+        case .wordBooks:
+            "词书管理"
         case .statistics:
             "学习统计"
         case .settings:
@@ -34,6 +37,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "calendar.badge.clock"
         case .wordbook:
             "books.vertical"
+        case .wordBooks:
+            "books.vertical.fill"
         case .statistics:
             "chart.bar.xaxis"
         case .settings:

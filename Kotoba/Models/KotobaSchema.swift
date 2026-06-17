@@ -9,9 +9,11 @@ import SwiftData
 
 enum KotobaSchema {
     static let models: [any PersistentModel.Type] = [
+        WordBook.self,
         VocabularyWord.self,
         LearningProgress.self,
-        ReviewLog.self
+        ReviewLog.self,
+        ConjugationRecord.self
     ]
 
     static var schema: Schema {

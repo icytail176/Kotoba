@@ -15,12 +15,37 @@ final class StudySessionViewModel: ObservableObject {
         let reviewedCount: Int
         let newWordCount: Int
         let lapseCount: Int
+        let spellingTotalCount: Int
+        let spellingFirstAttemptCorrectCount: Int
+        let spellingRetryCorrectCount: Int
+        let spellingRemainingIncorrectCount: Int
+
+        init(
+            reviewedCount: Int,
+            newWordCount: Int,
+            lapseCount: Int,
+            spellingTotalCount: Int = 0,
+            spellingFirstAttemptCorrectCount: Int = 0,
+            spellingRetryCorrectCount: Int = 0,
+            spellingRemainingIncorrectCount: Int = 0
+        ) {
+            self.reviewedCount = reviewedCount
+            self.newWordCount = newWordCount
+            self.lapseCount = lapseCount
+            self.spellingTotalCount = spellingTotalCount
+            self.spellingFirstAttemptCorrectCount = spellingFirstAttemptCorrectCount
+            self.spellingRetryCorrectCount = spellingRetryCorrectCount
+            self.spellingRemainingIncorrectCount = spellingRemainingIncorrectCount
+        }
     }
 
     @Published private(set) var session: StudySession?
     @Published private(set) var currentIndex = 0
     @Published private(set) var isAnswerVisible = false
     @Published private(set) var isSubmittingRating = false
+    @Published private(set) var isSpellingActive = false
+    @Published private(set) var spellingWords: [VocabularyWord] = []
+    @Published private(set) var spellingConjugationRecords: [ConjugationRecord] = []
     @Published private(set) var speechState: SpeechPlaybackState = .idle
     @Published private(set) var summary: Summary?
     @Published var errorMessage: String?
@@ -28,21 +53,26 @@ final class StudySessionViewModel: ObservableObject {
     private let queueService: StudyQueueService
     private let scheduler: ReviewScheduler
     private let speechService: SpeechServicing
+    private let conjugationCacheService: ConjugationCacheService
     private var submittedWordIDs = Set<UUID>()
+    private var spellingWordIDs = Set<UUID>()
     private var reviewedCount = 0
     private var newWordCount = 0
     private var lapseCount = 0
     private var autoSpeakWord = AppSettings.defaultAutoSpeakWord
     private var autoSpeakExample = AppSettings.defaultAutoSpeakExample
+    private var lastAutoSpokenWordID: UUID?
 
     init(
         queueService: StudyQueueService? = nil,
         scheduler: ReviewScheduler? = nil,
-        speechService: SpeechServicing? = nil
+        speechService: SpeechServicing? = nil,
+        conjugationCacheService: ConjugationCacheService? = nil
     ) {
         self.queueService = queueService ?? StudyQueueService()
         self.scheduler = scheduler ?? DefaultReviewScheduler()
         self.speechService = speechService ?? SpeechService()
+        self.conjugationCacheService = conjugationCacheService ?? ConjugationCacheService()
         self.speechState = self.speechService.state
         self.speechService.onStateChange = { [weak self] state in
             self?.speechState = state
@@ -79,13 +109,18 @@ final class StudySessionViewModel: ObservableObject {
 
     func loadSession(
         context: ModelContext,
+        wordBookID: UUID? = nil,
+        mode: StudySession.Mode = .mixed,
         now: Date = Date(),
         dailyNewWordLimit: Int? = nil,
         randomizesQueue: Bool = AppSettings.defaultRandomizeStudyQueue
     ) {
         do {
+            let wordBook = try resolveWordBook(id: wordBookID, context: context)
             session = try queueService.buildSession(
                 in: context,
+                wordBook: wordBook,
+                mode: mode,
                 now: now,
                 dailyNewWordLimit: dailyNewWordLimit ?? StudyQueueService.defaultDailyNewWordLimit,
                 randomizesQueue: randomizesQueue
@@ -93,13 +128,19 @@ final class StudySessionViewModel: ObservableObject {
             currentIndex = 0
             isAnswerVisible = false
             isSubmittingRating = false
+            isSpellingActive = false
+            spellingWords = []
+            spellingConjugationRecords = []
             submittedWordIDs.removeAll()
+            spellingWordIDs.removeAll()
             reviewedCount = 0
             newWordCount = 0
             lapseCount = 0
+            lastAutoSpokenWordID = nil
             errorMessage = nil
 
             if session?.status == .completed {
+                stopSpeech()
                 summary = Summary(reviewedCount: 0, newWordCount: 0, lapseCount: 0)
             } else {
                 summary = nil
@@ -206,7 +247,11 @@ final class StudySessionViewModel: ObservableObject {
                 lapseCount += 1
             }
 
-            advance()
+            if spellingWordIDs.insert(item.word.id).inserted {
+                spellingWords.append(item.word)
+            }
+
+            advance(context: context)
         } catch {
             context.rollback()
             errorMessage = "评价保存失败：\(error.localizedDescription)"
@@ -251,9 +296,35 @@ final class StudySessionViewModel: ObservableObject {
         speechService.stop()
     }
 
-    private func advance() {
+    func speakSpellingAnswer(_ text: String) {
+        speechService.speakWord(text)
+    }
+
+    func speakSpellingExample(_ text: String) {
+        speechService.speakExample(text)
+    }
+
+    func completeSpelling(_ spellingSummary: SpellingSessionViewModel.Summary) {
+        isSpellingActive = false
+        stopSpeech()
+        summary = Summary(
+            reviewedCount: reviewedCount,
+            newWordCount: newWordCount,
+            lapseCount: lapseCount,
+            spellingTotalCount: spellingSummary.totalCount,
+            spellingFirstAttemptCorrectCount: spellingSummary.firstAttemptCorrectCount,
+            spellingRetryCorrectCount: spellingSummary.retryCorrectCount,
+            spellingRemainingIncorrectCount: spellingSummary.remainingIncorrectCount
+        )
+    }
+
+    private func advance(context: ModelContext) {
         guard let session else {
             return
+        }
+
+        if speechState.isSpeaking {
+            stopSpeech()
         }
 
         let nextIndex = currentIndex + 1
@@ -264,19 +335,50 @@ final class StudySessionViewModel: ObservableObject {
         } else {
             currentIndex = session.items.count
             isAnswerVisible = false
+            stopSpeech()
+            prepareSpellingStage(context: context)
+        }
+    }
+
+    private func prepareSpellingStage(context: ModelContext) {
+        guard !spellingWords.isEmpty else {
             summary = Summary(
                 reviewedCount: reviewedCount,
                 newWordCount: newWordCount,
                 lapseCount: lapseCount
             )
-        }
-    }
-
-    private func speakCurrentWordIfNeeded() {
-        guard autoSpeakWord else {
             return
         }
 
+        do {
+            for word in spellingWords {
+                _ = try conjugationCacheService.ensureLocalRecord(for: word, in: context)
+            }
+            spellingConjugationRecords = try conjugationCacheService.validRecords(for: spellingWords, in: context)
+        } catch {
+            spellingConjugationRecords = []
+        }
+
+        isSpellingActive = true
+    }
+
+    private func speakCurrentWordIfNeeded() {
+        guard autoSpeakWord,
+              let word = currentWord,
+              word.id != lastAutoSpokenWordID else {
+            return
+        }
+
+        lastAutoSpokenWordID = word.id
         speakWord()
+    }
+
+    private func resolveWordBook(id: UUID?, context: ModelContext) throws -> WordBook? {
+        guard let id else {
+            return nil
+        }
+
+        let books = try context.fetch(FetchDescriptor<WordBook>())
+        return books.first { $0.id == id }
     }
 }

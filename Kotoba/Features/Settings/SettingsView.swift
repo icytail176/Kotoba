@@ -16,6 +16,12 @@ struct SettingsView: View {
     @AppStorage(AppSettings.autoSpeakWordKey) private var autoSpeakWord = AppSettings.defaultAutoSpeakWord
     @AppStorage(AppSettings.autoSpeakExampleKey) private var autoSpeakExample = AppSettings.defaultAutoSpeakExample
     @AppStorage(AppSettings.randomizeStudyQueueKey) private var randomizeStudyQueue = AppSettings.defaultRandomizeStudyQueue
+    @AppStorage(AppSettings.lmStudioEnabledKey) private var lmStudioEnabled = AppSettings.defaultLMStudioEnabled
+    @AppStorage(AppSettings.lmStudioBaseURLKey) private var lmStudioBaseURL = AppSettings.defaultLMStudioBaseURL
+    @AppStorage(AppSettings.lmStudioModelKey) private var lmStudioModel = AppSettings.defaultLMStudioModel
+    @AppStorage(AppSettings.lmStudioTimeoutKey) private var lmStudioTimeout = AppSettings.defaultLMStudioTimeout
+    @AppStorage(AppSettings.lmStudioBatchSizeKey) private var lmStudioBatchSize = AppSettings.defaultLMStudioBatchSize
+    @AppStorage(AppSettings.autoGenerateConjugationsKey) private var autoGenerateConjugations = AppSettings.defaultAutoGenerateConjugations
     @StateObject private var viewModel = SettingsViewModel()
 
     var body: some View {
@@ -59,6 +65,63 @@ struct SettingsView: View {
 
                     Toggle("自动朗读单词", isOn: $autoSpeakWord)
                     Toggle("自动朗读例句", isOn: $autoSpeakExample)
+                }
+
+                Section("LM Studio") {
+                    Toggle("启用本地活用生成", isOn: $lmStudioEnabled)
+
+                    TextField("服务地址", text: $lmStudioBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!lmStudioEnabled)
+
+                    TextField("模型名称", text: $lmStudioModel)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!lmStudioEnabled)
+
+                    Stepper(value: lmStudioTimeoutBinding, in: AppSettings.minimumLMStudioTimeout...AppSettings.maximumLMStudioTimeout, step: 5) {
+                        LabeledContent("超时时间") {
+                            Text("\(Int(lmStudioTimeoutBinding.wrappedValue)) 秒")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(!lmStudioEnabled)
+
+                    Stepper(value: lmStudioBatchSizeBinding, in: AppSettings.minimumLMStudioBatchSize...AppSettings.maximumLMStudioBatchSize) {
+                        LabeledContent("批量数量") {
+                            Text("\(lmStudioBatchSizeBinding.wrappedValue)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(!lmStudioEnabled)
+
+                    Toggle("自动补全活用缓存", isOn: $autoGenerateConjugations)
+                        .disabled(!lmStudioEnabled)
+
+                    HStack {
+                        Button {
+                            viewModel.testLMStudioConnection(
+                                baseURLString: lmStudioBaseURL,
+                                modelName: lmStudioModel,
+                                timeout: lmStudioTimeout
+                            )
+                        } label: {
+                            Label("测试连接", systemImage: "network")
+                        }
+                        .disabled(!lmStudioEnabled || viewModel.isTestingLMStudio)
+
+                        if viewModel.isTestingLMStudio {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        if let status = viewModel.lmStudioStatusMessage {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section("数据") {
@@ -164,6 +227,22 @@ struct SettingsView: View {
 
     private var speechRateText: String {
         "\(Int((japaneseSpeechRateBinding.wrappedValue / AppSettings.defaultJapaneseSpeechRate * 100).rounded()))%"
+    }
+
+    private var lmStudioTimeoutBinding: Binding<Double> {
+        Binding {
+            AppSettings.clampedLMStudioTimeout(lmStudioTimeout)
+        } set: { newValue in
+            lmStudioTimeout = AppSettings.clampedLMStudioTimeout(newValue)
+        }
+    }
+
+    private var lmStudioBatchSizeBinding: Binding<Int> {
+        Binding {
+            AppSettings.clampedLMStudioBatchSize(lmStudioBatchSize)
+        } set: { newValue in
+            lmStudioBatchSize = AppSettings.clampedLMStudioBatchSize(newValue)
+        }
     }
 }
 

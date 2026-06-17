@@ -37,6 +37,7 @@ final class WordbookViewModel: ObservableObject {
     @Published private(set) var words: [VocabularyWord] = []
     @Published private(set) var filteredWords: [VocabularyWord] = []
     @Published private(set) var optionSets = WordbookOptionSets(
+        wordBooks: [],
         jlptLevels: [],
         partsOfSpeech: [],
         tags: [],
@@ -56,9 +57,13 @@ final class WordbookViewModel: ObservableObject {
     @Published var wordPendingProgressReset: VocabularyWord?
 
     private let service: WordbookService
+    private let wordBookService: WordBookService
+    private var currentWordBook: WordBook?
+    private var currentWordBookID: UUID?
 
-    init(service: WordbookService? = nil) {
+    init(service: WordbookService? = nil, wordBookService: WordBookService? = nil) {
         self.service = service ?? WordbookService()
+        self.wordBookService = wordBookService ?? WordBookService()
     }
 
     var selectedWord: VocabularyWord? {
@@ -73,10 +78,16 @@ final class WordbookViewModel: ObservableObject {
         filters != WordbookFilters()
     }
 
-    func loadWords(context: ModelContext) {
+    func loadWords(context: ModelContext, selectedWordBookID: String = "") {
         do {
+            let wordBooks = try wordBookService.fetchWordBooks(in: context)
+            currentWordBook = try wordBookService.resolveSelectedWordBook(
+                in: context,
+                selectedIDString: selectedWordBookID.isEmpty ? nil : selectedWordBookID
+            )
+            currentWordBookID = currentWordBook?.id
             words = try service.fetchWords(in: context)
-            optionSets = service.makeOptionSets(from: words)
+            optionSets = service.makeOptionSets(from: words, wordBooks: wordBooks)
             applyFilters()
             normalizeSelection()
         } catch {
@@ -104,7 +115,12 @@ final class WordbookViewModel: ObservableObject {
         do {
             switch editorMode {
             case .add:
-                let word = try service.createWord(from: editorDraft, in: context)
+                guard let currentWordBook else {
+                    errorMessage = "请先选择或创建词书。"
+                    return
+                }
+
+                let word = try service.createWord(from: editorDraft, wordBook: currentWordBook, in: context)
                 selectedWordID = word.id
             case .edit(let id):
                 guard let word = words.first(where: { $0.id == id }) else {
@@ -119,7 +135,7 @@ final class WordbookViewModel: ObservableObject {
 
             editorMode = nil
             validationMessage = nil
-            loadWords(context: context)
+            loadWords(context: context, selectedWordBookID: currentWordBook?.id.uuidString ?? "")
         } catch let validationError as WordbookValidationError {
             validationMessage = validationError.localizedDescription
         } catch {
@@ -149,7 +165,7 @@ final class WordbookViewModel: ObservableObject {
             try service.deleteWord(word, in: context)
             wordPendingDeletion = nil
             selectedWordID = nil
-            loadWords(context: context)
+            loadWords(context: context, selectedWordBookID: currentWordBook?.id.uuidString ?? "")
         } catch {
             errorMessage = "删除单词失败：\(error.localizedDescription)"
         }
@@ -175,7 +191,7 @@ final class WordbookViewModel: ObservableObject {
         do {
             try service.resetProgress(for: word, in: context)
             wordPendingProgressReset = nil
-            loadWords(context: context)
+            loadWords(context: context, selectedWordBookID: currentWordBook?.id.uuidString ?? "")
         } catch {
             errorMessage = "重置学习进度失败：\(error.localizedDescription)"
         }
@@ -189,8 +205,16 @@ final class WordbookViewModel: ObservableObject {
         filters = WordbookFilters()
     }
 
+    func updateSelection(_ newSelection: VocabularyWord.ID?) {
+        if selectedWordID == newSelection {
+            selectedWordID = nil
+        } else {
+            selectedWordID = newSelection
+        }
+    }
+
     private func applyFilters() {
-        filteredWords = service.filter(words, using: filters)
+        filteredWords = service.filter(words, using: filters, currentWordBookID: currentWordBookID)
         normalizeSelection()
     }
 
@@ -199,6 +223,6 @@ final class WordbookViewModel: ObservableObject {
             return
         }
 
-        selectedWordID = filteredWords.first?.id
+        selectedWordID = nil
     }
 }

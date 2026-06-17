@@ -27,6 +27,7 @@ final class SampleVocabularyWordsTests: XCTestCase {
 
         XCTAssertEqual(try context.fetch(FetchDescriptor<VocabularyWord>()).count, 10)
         XCTAssertEqual(try context.fetch(FetchDescriptor<LearningProgress>()).count, 10)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<WordBook>()).count, 1)
     }
 
     func testProductionStyleInMemoryContainerDoesNotSeedSampleWords() throws {

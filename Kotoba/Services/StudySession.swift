@@ -8,6 +8,12 @@
 import Foundation
 
 struct StudySession {
+    enum Mode: String, Equatable {
+        case mixed
+        case newWordsOnly
+        case dueReviewsOnly
+    }
+
     enum Status: Equatable {
         case ready
         case completed

@@ -219,11 +219,72 @@ final class StudyQueueServiceTests: XCTestCase {
         XCTAssertEqual(session.status, .completed)
     }
 
+    func testNewWordsOnlyModeIsScopedToSelectedWordBook() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        let targetBook = WordBook(name: "目标词书")
+        let otherBook = WordBook(name: "其他词书")
+        let targetNew = makeWord("学生", state: .new, dueAt: now, createdAt: now, wordBook: targetBook)
+        let targetReview = makeWord("確認", state: .review, dueAt: now, createdAt: now, wordBook: targetBook)
+        let otherNew = makeWord("水", state: .new, dueAt: now, createdAt: now, wordBook: otherBook)
+
+        context.insert(targetBook)
+        context.insert(otherBook)
+        context.insert(targetNew)
+        context.insert(targetReview)
+        context.insert(otherNew)
+        try context.save()
+
+        let session = try service.buildSession(
+            in: context,
+            wordBook: targetBook,
+            mode: .newWordsOnly,
+            now: now,
+            dailyNewWordLimit: 20
+        )
+
+        XCTAssertEqual(session.items.map { $0.word.japanese }, ["学生"])
+        XCTAssertEqual(session.items.map(\.kind), [.newWord])
+    }
+
+    func testDueReviewsOnlyModeIsScopedToSelectedWordBook() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        let targetBook = WordBook(name: "目标词书")
+        let otherBook = WordBook(name: "其他词书")
+        let targetDue = makeWord("復習", state: .review, dueAt: now, createdAt: now, wordBook: targetBook)
+        let targetFuture = makeWord("未来", state: .review, dueAt: addingDays(1, to: now), createdAt: now, wordBook: targetBook)
+        let targetNew = makeWord("新規", state: .new, dueAt: now, createdAt: now, wordBook: targetBook)
+        let otherDue = makeWord("別本", state: .review, dueAt: now, createdAt: now, wordBook: otherBook)
+
+        context.insert(targetBook)
+        context.insert(otherBook)
+        context.insert(targetDue)
+        context.insert(targetFuture)
+        context.insert(targetNew)
+        context.insert(otherDue)
+        try context.save()
+
+        let session = try service.buildSession(
+            in: context,
+            wordBook: targetBook,
+            mode: .dueReviewsOnly,
+            now: now,
+            dailyNewWordLimit: 20
+        )
+
+        XCTAssertEqual(session.items.map { $0.word.japanese }, ["復習"])
+        XCTAssertEqual(session.items.map(\.kind), [.dueReview])
+    }
+
     private func makeWord(
         _ japanese: String,
         state: LearningState,
         dueAt: Date,
-        createdAt: Date
+        createdAt: Date,
+        wordBook: WordBook? = nil
     ) -> VocabularyWord {
         let word = VocabularyWord(
             japanese: japanese,
@@ -231,7 +292,8 @@ final class StudyQueueServiceTests: XCTestCase {
             chineseMeaning: japanese,
             jlptLevel: "N5",
             createdAt: createdAt,
-            updatedAt: createdAt
+            updatedAt: createdAt,
+            wordBook: wordBook
         )
         word.progress = LearningProgress(
             state: state,

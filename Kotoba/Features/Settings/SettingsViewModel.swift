@@ -20,6 +20,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var isFirstClearConfirmationPresented = false
     @Published var isFinalClearConfirmationPresented = false
     @Published var clearConfirmationText = ""
+    @Published var isTestingLMStudio = false
+    @Published var lmStudioStatusMessage: String?
 
     private let exportService: VocabularyCSVExportService
     private let dataManagementService: DataManagementService
@@ -83,6 +85,42 @@ final class SettingsViewModel: ObservableObject {
             successMessage = "全部本地学习数据已清空。"
         } catch {
             errorMessage = "清空数据失败：\(error.localizedDescription)"
+        }
+    }
+
+    func testLMStudioConnection(
+        baseURLString: String,
+        modelName: String,
+        timeout: Double
+    ) {
+        guard !isTestingLMStudio else {
+            return
+        }
+
+        guard let baseURL = URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            errorMessage = "LM Studio URL 格式无效。"
+            return
+        }
+
+        isTestingLMStudio = true
+        lmStudioStatusMessage = nil
+
+        Task {
+            do {
+                let provider = LMStudioConjugationProvider(
+                    baseURL: baseURL,
+                    modelName: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    timeout: AppSettings.clampedLMStudioTimeout(timeout)
+                )
+                let status = try await provider.testConnection()
+                lmStudioStatusMessage = status.message
+                successMessage = status.message
+            } catch {
+                lmStudioStatusMessage = "连接失败：\(error.localizedDescription)"
+                errorMessage = lmStudioStatusMessage
+            }
+
+            isTestingLMStudio = false
         }
     }
 }

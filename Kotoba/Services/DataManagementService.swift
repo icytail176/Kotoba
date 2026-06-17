@@ -12,27 +12,35 @@ import SwiftData
 struct DataManagementService {
     func clearAllData(in context: ModelContext) throws {
         do {
+            let wordBooks = try context.fetch(FetchDescriptor<WordBook>())
             let words = try context.fetch(FetchDescriptor<VocabularyWord>())
+            let progressItems = try context.fetch(FetchDescriptor<LearningProgress>())
+            let logs = try context.fetch(FetchDescriptor<ReviewLog>())
+            let conjugationRecords = try context.fetch(FetchDescriptor<ConjugationRecord>())
+            let orphanProgress = progressItems.filter { $0.word == nil }
+            let orphanLogs = logs.filter { $0.word == nil }
+
+            for record in conjugationRecords {
+                context.delete(record)
+            }
+
+            for wordBook in wordBooks {
+                context.delete(wordBook)
+            }
+
             for word in words {
                 context.delete(word)
             }
 
-            try context.save()
-
-            let remainingProgress = try context.fetch(FetchDescriptor<LearningProgress>())
-            let remainingLogs = try context.fetch(FetchDescriptor<ReviewLog>())
-
-            for progress in remainingProgress {
+            for progress in orphanProgress {
                 context.delete(progress)
             }
 
-            for log in remainingLogs {
+            for log in orphanLogs {
                 context.delete(log)
             }
 
-            if !remainingProgress.isEmpty || !remainingLogs.isEmpty {
-                try context.save()
-            }
+            try context.save()
         } catch {
             context.rollback()
             throw error

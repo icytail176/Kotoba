@@ -8,7 +8,10 @@
 import Foundation
 
 enum SampleVocabularyWords {
-    static func makeWords(referenceDate: Date = Date()) -> [VocabularyWord] {
+    static func makeWords(
+        referenceDate: Date = Date(),
+        wordBook: WordBook? = nil
+    ) -> [VocabularyWord] {
         [
             makeWord(
                 japanese: "学生",
@@ -19,7 +22,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "私は学生です。",
                 exampleChinese: "我是学生。",
                 tags: ["学校", "N5"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "水",
@@ -30,7 +34,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "水を飲みます。",
                 exampleChinese: "喝水。",
                 tags: ["生活", "N5"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "食べる",
@@ -41,7 +46,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "朝ご飯を食べます。",
                 exampleChinese: "吃早饭。",
                 tags: ["动作", "N5"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "便利",
@@ -52,7 +58,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "このアプリは便利です。",
                 exampleChinese: "这个应用很方便。",
                 tags: ["评价", "N4"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "準備",
@@ -63,7 +70,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "旅行の準備をします。",
                 exampleChinese: "做旅行的准备。",
                 tags: ["动作", "N4"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "間に合う",
@@ -74,7 +82,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "電車に間に合いました。",
                 exampleChinese: "赶上了电车。",
                 tags: ["时间", "N4"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "確認",
@@ -85,7 +94,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "予定を確認してください。",
                 exampleChinese: "请确认日程。",
                 tags: ["工作", "N3"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "影響",
@@ -96,7 +106,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "天気は気分に影響します。",
                 exampleChinese: "天气会影响心情。",
                 tags: ["抽象", "N3"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "集中",
@@ -107,7 +118,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "勉強に集中します。",
                 exampleChinese: "专心学习。",
                 tags: ["学习", "N3"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             ),
             makeWord(
                 japanese: "増える",
@@ -118,7 +130,8 @@ enum SampleVocabularyWords {
                 exampleJapanese: "覚えた言葉が増えました。",
                 exampleChinese: "记住的词变多了。",
                 tags: ["变化", "N3"],
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                wordBook: wordBook
             )
         ]
     }
@@ -132,7 +145,8 @@ enum SampleVocabularyWords {
         exampleJapanese: String,
         exampleChinese: String,
         tags: [String],
-        referenceDate: Date
+        referenceDate: Date,
+        wordBook: WordBook?
     ) -> VocabularyWord {
         let word = VocabularyWord(
             japanese: japanese,
@@ -144,7 +158,8 @@ enum SampleVocabularyWords {
             exampleChinese: exampleChinese,
             tags: tags,
             createdAt: referenceDate,
-            updatedAt: referenceDate
+            updatedAt: referenceDate,
+            wordBook: wordBook
         )
         let progress = LearningProgress(
             state: .new,

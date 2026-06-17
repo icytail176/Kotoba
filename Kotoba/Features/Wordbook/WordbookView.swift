@@ -11,9 +11,11 @@ import UniformTypeIdentifiers
 
 struct WordbookView: View {
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(AppSettings.selectedWordBookIDKey) private var selectedWordBookID = ""
     @StateObject private var viewModel = WordbookViewModel()
     @StateObject private var importViewModel = VocabularyImportViewModel()
     @State private var isFileImporterPresented = false
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         PageScaffold(title: "单词本", subtitle: "管理本地保存的日语词汇。") {
@@ -22,6 +24,7 @@ struct WordbookView: View {
                     filters: $viewModel.filters,
                     optionSets: viewModel.optionSets,
                     isFiltering: viewModel.isFiltering,
+                    searchFieldFocus: $isSearchFieldFocused,
                     onClear: {
                         viewModel.clearFilters()
                     },
@@ -38,8 +41,17 @@ struct WordbookView: View {
                 content
             }
         }
-        .task {
-            viewModel.loadWords(context: modelContext)
+        .task(id: selectedWordBookID) {
+            viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
+        }
+        .overlay(alignment: .topLeading) {
+            Button("搜索") {
+                isSearchFieldFocused = true
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -52,7 +64,11 @@ struct WordbookView: View {
                     return
                 }
 
-                importViewModel.loadPreview(from: url, context: modelContext)
+                importViewModel.prepareFile(
+                    from: url,
+                    context: modelContext,
+                    preferredWordBookID: selectedWordBookID
+                )
             case .failure(let error):
                 importViewModel.errorMessage = error.localizedDescription
             }
@@ -70,6 +86,17 @@ struct WordbookView: View {
                 }
             )
         }
+        .sheet(isPresented: $importViewModel.isTargetConfigurationPresented) {
+            VocabularyImportTargetView(
+                viewModel: importViewModel,
+                onCancel: {
+                    importViewModel.cancelTargetSelection()
+                },
+                onConfirm: {
+                    importViewModel.confirmTargetSelection(context: modelContext)
+                }
+            )
+        }
         .sheet(item: $importViewModel.preview) { preview in
             VocabularyImportPreviewView(
                 preview: preview,
@@ -80,14 +107,17 @@ struct WordbookView: View {
                 },
                 onConfirm: {
                     importViewModel.confirmImport(context: modelContext)
-                    viewModel.loadWords(context: modelContext)
+                    viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
                 }
             )
         }
         .sheet(item: $importViewModel.result) { result in
             VocabularyImportResultView(result: result) {
+                if let wordBookID = result.wordBookID {
+                    selectedWordBookID = wordBookID.uuidString
+                }
                 importViewModel.dismissResult()
-                viewModel.loadWords(context: modelContext)
+                viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
             }
         }
         .deleteConfirmation(
@@ -165,29 +195,35 @@ struct WordbookView: View {
                 }
             }
         } else {
-            HSplitView {
+            if viewModel.selectedWord == nil {
                 wordTable
-                    .frame(minWidth: 520, idealWidth: 680)
+                    .frame(minWidth: 360, idealWidth: 560, maxWidth: .infinity)
+            } else {
+                HSplitView {
+                    wordTable
+                        .frame(minWidth: 360, idealWidth: 560, maxWidth: .infinity)
 
-                WordDetailView(
-                    word: viewModel.selectedWord,
-                    onEdit: {
-                        viewModel.beginEditSelectedWord()
-                    },
-                    onDelete: {
-                        viewModel.requestDeleteSelectedWord()
-                    },
-                    onResetProgress: {
-                        viewModel.requestResetProgressForSelectedWord()
-                    }
-                )
-                .frame(minWidth: 320)
+                    WordDetailView(
+                        word: viewModel.selectedWord,
+                        onEdit: {
+                            viewModel.beginEditSelectedWord()
+                        },
+                        onDelete: {
+                            viewModel.requestDeleteSelectedWord()
+                        },
+                        onResetProgress: {
+                            viewModel.requestResetProgressForSelectedWord()
+                        }
+                    )
+                    .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
         }
     }
 
     private var wordTable: some View {
-        Table(viewModel.filteredWords, selection: $viewModel.selectedWordID) {
+        Table(viewModel.filteredWords, selection: selectedWordBinding) {
             TableColumn("单词") { word in
                 HStack(spacing: 6) {
                     Text(word.japanese)
@@ -198,30 +234,45 @@ struct WordbookView: View {
                             .foregroundStyle(.yellow)
                     }
                 }
+                .lineLimit(1)
+                .truncationMode(.tail)
             }
+            .width(min: 100, ideal: 140, max: 220)
 
             TableColumn("假名") { word in
                 Text(word.kana)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .width(min: 100, ideal: 130, max: 200)
 
             TableColumn("中文释义") { word in
                 Text(word.chineseMeaning)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .width(min: 120, ideal: 170, max: 280)
 
             TableColumn("JLPT") { word in
                 Text(word.jlptLevel.isEmpty ? "-" : word.jlptLevel)
+                    .lineLimit(1)
             }
-            .width(70)
+            .width(min: 60, ideal: 70, max: 90)
 
             TableColumn("词性") { word in
                 Text(word.partOfSpeech.isEmpty ? "-" : word.partOfSpeech)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .width(min: 90, ideal: 120, max: 180)
 
             TableColumn("状态") { word in
                 Text(word.progress?.state.displayName ?? "-")
+                    .lineLimit(1)
             }
-            .width(90)
+            .width(min: 90, ideal: 110, max: 160)
         }
+        .frame(minWidth: 0, maxWidth: .infinity)
         .contextMenu(forSelectionType: VocabularyWord.ID.self) { selection in
             Button("编辑") {
                 if let id = selection.first {
@@ -245,6 +296,14 @@ struct WordbookView: View {
                 }
                 viewModel.requestDeleteSelectedWord()
             }
+        }
+    }
+
+    private var selectedWordBinding: Binding<VocabularyWord.ID?> {
+        Binding {
+            viewModel.selectedWordID
+        } set: { newSelection in
+            viewModel.updateSelection(newSelection)
         }
     }
 

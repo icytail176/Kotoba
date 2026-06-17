@@ -30,6 +30,16 @@ struct StudySummaryView: View {
                 SummaryMetric(title: "遗忘", value: summary.lapseCount)
             }
             .frame(maxWidth: 520)
+
+            if summary.spellingTotalCount > 0 {
+                HStack(spacing: 12) {
+                    SummaryMetric(title: "拼写题", value: summary.spellingTotalCount)
+                    SummaryMetric(title: "首次正确", value: summary.spellingFirstAttemptCorrectCount)
+                    SummaryMetric(title: "重练正确", value: summary.spellingRetryCorrectCount)
+                    SummaryMetric(title: "仍需复习", value: summary.spellingRemainingIncorrectCount)
+                }
+                .frame(maxWidth: 680)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)

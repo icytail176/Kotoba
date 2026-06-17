@@ -19,22 +19,40 @@ struct StudyQueueService {
 
     func buildSession(
         in context: ModelContext,
+        wordBook: WordBook? = nil,
+        mode: StudySession.Mode = .mixed,
         now: Date,
         dailyNewWordLimit: Int = Self.defaultDailyNewWordLimit,
         randomizesQueue: Bool = false
     ) throws -> StudySession {
         let words = try context.fetch(FetchDescriptor<VocabularyWord>())
-        let activeWords = words.filter { !$0.isArchived }
-        let dueItems = dueReviewItems(from: activeWords, now: now)
+        let activeWords = scopedActiveWords(words, wordBook: wordBook)
+        let dueItems = mode == .newWordsOnly ? [] : dueReviewItems(from: activeWords, now: now)
         let newWordsAlreadyIntroducedToday = countNewWordsIntroducedToday(from: activeWords, now: now)
         let remainingNewWordSlots = max(0, dailyNewWordLimit - newWordsAlreadyIntroducedToday)
-        let newItems = newWordItems(
-            from: activeWords,
-            excluding: Set(dueItems.map(\.id)),
-            limit: remainingNewWordSlots,
-            now: now
-        )
-        let items = randomizesQueue ? dueItems.shuffled() + newItems.shuffled() : dueItems + newItems
+        let newItems: [StudySession.Item]
+
+        switch mode {
+        case .mixed, .newWordsOnly:
+            newItems = newWordItems(
+                from: activeWords,
+                excluding: Set(dueItems.map(\.id)),
+                limit: remainingNewWordSlots,
+                now: now
+            )
+        case .dueReviewsOnly:
+            newItems = []
+        }
+
+        let items: [StudySession.Item]
+        switch mode {
+        case .mixed:
+            items = randomizesQueue ? dueItems.shuffled() + newItems.shuffled() : dueItems + newItems
+        case .newWordsOnly:
+            items = randomizesQueue ? newItems.shuffled() : newItems
+        case .dueReviewsOnly:
+            items = randomizesQueue ? dueItems.shuffled() : dueItems
+        }
 
         return StudySession(
             status: items.isEmpty ? .completed : .ready,
@@ -42,6 +60,20 @@ struct StudyQueueService {
             newWordLimit: dailyNewWordLimit,
             newWordsAlreadyIntroducedToday: newWordsAlreadyIntroducedToday
         )
+    }
+
+    private func scopedActiveWords(_ words: [VocabularyWord], wordBook: WordBook?) -> [VocabularyWord] {
+        words.filter { word in
+            guard !word.isArchived else {
+                return false
+            }
+
+            guard let wordBook else {
+                return true
+            }
+
+            return word.wordBook?.id == wordBook.id
+        }
     }
 
     private func dueReviewItems(from words: [VocabularyWord], now: Date) -> [StudySession.Item] {

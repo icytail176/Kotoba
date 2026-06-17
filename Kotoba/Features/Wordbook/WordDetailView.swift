@@ -55,7 +55,7 @@ struct WordDetailView: View {
                 )
             }
         }
-        .frame(minWidth: 300)
+        .frame(minWidth: 240)
     }
 
     private func header(for word: VocabularyWord) -> some View {
@@ -78,26 +78,52 @@ struct WordDetailView: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
 
-            HStack {
-                Button {
-                    onEdit()
-                } label: {
-                    Label("编辑", systemImage: "pencil")
-                }
+            ViewThatFits(in: .horizontal) {
+                horizontalActionButtons
 
-                Button {
-                    onResetProgress()
-                } label: {
-                    Label("重置进度", systemImage: "arrow.counterclockwise")
-                }
-
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("删除", systemImage: "trash")
-                }
+                verticalActionButtons
             }
             .buttonStyle(.bordered)
+        }
+    }
+
+    private var horizontalActionButtons: some View {
+        HStack {
+            editButton
+            resetProgressButton
+            deleteButton
+        }
+    }
+
+    private var verticalActionButtons: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            editButton
+            resetProgressButton
+            deleteButton
+        }
+    }
+
+    private var editButton: some View {
+        Button {
+            onEdit()
+        } label: {
+            Label("编辑", systemImage: "pencil")
+        }
+    }
+
+    private var resetProgressButton: some View {
+        Button {
+            onResetProgress()
+        } label: {
+            Label("重置进度", systemImage: "arrow.counterclockwise")
+        }
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            onDelete()
+        } label: {
+            Label("删除", systemImage: "trash")
         }
     }
 

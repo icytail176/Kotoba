@@ -24,6 +24,11 @@ enum VocabularyDuplicateHandling: String, CaseIterable, Identifiable {
     }
 }
 
+enum VocabularyImportTarget: Equatable {
+    case newWordBook(name: String, description: String)
+    case existingWordBook(UUID)
+}
+
 struct VocabularyImportRowError: Error, Identifiable, Equatable {
     let lineNumber: Int
     let reason: String
@@ -39,11 +44,11 @@ struct VocabularyImportRow: Identifiable {
     let expression: String
     let reading: String
     let meaningChinese: String
-    let partOfSpeech: String
-    let exampleJapanese: String
-    let exampleChinese: String
-    let jlptLevel: String
-    let tags: [String]
+    let partOfSpeech: String?
+    let exampleJapanese: String?
+    let exampleChinese: String?
+    let jlptLevel: String?
+    let tags: [String]?
     let isDuplicate: Bool
 
     var key: VocabularyWordImportKey {
@@ -99,6 +104,8 @@ struct VocabularyImportResult: Identifiable {
     let updatedCount: Int
     let skippedDuplicateCount: Int
     let ignoredErrorCount: Int
+    let wordBookID: UUID?
+    let wordBookName: String?
 
     var totalChangedCount: Int {
         insertedCount + updatedCount
@@ -124,24 +131,22 @@ enum VocabularyCSVImportError: LocalizedError, Equatable {
 
 struct VocabularyCSVImportService {
     private static let allowedJLPTLevels = Set(["N5", "N4", "N3", "N2", "N1", ""])
-    private static let expectedHeaders = [
+    private static let requiredHeaders = [
         "expression",
         "reading",
-        "meaningChinese",
-        "partOfSpeech",
-        "exampleJapanese",
-        "exampleChinese",
-        "jlptLevel",
-        "tags"
+        "meaningChinese"
     ]
 
     private let parser = CSVParser()
+    private let partOfSpeechTokenizer = PartOfSpeechTokenizer()
 
     @MainActor
     func makePreview(
         from data: Data,
         fileName: String,
-        context: ModelContext
+        context: ModelContext,
+        targetWordBook: WordBook? = nil,
+        createsNewWordBook: Bool = false
     ) throws -> VocabularyImportPreview {
         guard let text = String(data: data, encoding: .utf8) else {
             throw VocabularyCSVImportError.invalidUTF8
@@ -149,7 +154,7 @@ struct VocabularyCSVImportService {
 
         let table = try parser.parse(text)
         let headerIndex = try makeHeaderIndex(from: table.headers)
-        let existingKeys = try fetchExistingKeys(in: context)
+        let existingKeys = createsNewWordBook ? [] : try fetchExistingKeys(in: context, wordBook: targetWordBook)
         var seenFileKeys: [VocabularyWordImportKey: Int] = [:]
         var rows: [VocabularyImportRow] = []
         var errors: [VocabularyImportRowError] = []
@@ -184,9 +189,11 @@ struct VocabularyCSVImportService {
         from preview: VocabularyImportPreview,
         duplicateHandling: VocabularyDuplicateHandling,
         context: ModelContext,
+        target: VocabularyImportTarget? = nil,
         now: Date = Date()
     ) throws -> VocabularyImportResult {
-        let existingWords = try fetchExistingWordsByKey(in: context)
+        let targetWordBook = try resolveImportTarget(target, in: context, now: now)
+        let existingWords = try fetchExistingWordsByKey(in: context, wordBook: targetWordBook, treatsNilAsAllWordBooks: target == nil)
         var insertedCount = 0
         var updatedCount = 0
         var skippedDuplicateCount = 0
@@ -202,7 +209,7 @@ struct VocabularyCSVImportService {
                         updatedCount += 1
                     }
                 } else {
-                    let word = makeWord(from: row, now: now)
+                    let word = makeWord(from: row, wordBook: targetWordBook, now: now)
                     context.insert(word)
                     insertedCount += 1
                 }
@@ -218,7 +225,9 @@ struct VocabularyCSVImportService {
             insertedCount: insertedCount,
             updatedCount: updatedCount,
             skippedDuplicateCount: skippedDuplicateCount,
-            ignoredErrorCount: preview.errorRows
+            ignoredErrorCount: preview.errorRows,
+            wordBookID: targetWordBook?.id,
+            wordBookName: targetWordBook?.name
         )
     }
 
@@ -239,7 +248,7 @@ struct VocabularyCSVImportService {
             throw VocabularyCSVImportError.duplicateHeaders(duplicateHeaders)
         }
 
-        let missingHeaders = Self.expectedHeaders.filter { headerIndex[$0] == nil }
+        let missingHeaders = Self.requiredHeaders.filter { headerIndex[$0] == nil }
         if !missingHeaders.isEmpty {
             throw VocabularyCSVImportError.missingHeaders(missingHeaders)
         }
@@ -265,11 +274,12 @@ struct VocabularyCSVImportService {
         let expression = value(named: "expression", in: record, using: headerIndex)
         let reading = value(named: "reading", in: record, using: headerIndex)
         let meaningChinese = value(named: "meaningChinese", in: record, using: headerIndex)
-        let partOfSpeech = value(named: "partOfSpeech", in: record, using: headerIndex)
-        let exampleJapanese = value(named: "exampleJapanese", in: record, using: headerIndex)
-        let exampleChinese = value(named: "exampleChinese", in: record, using: headerIndex)
-        let jlptLevel = value(named: "jlptLevel", in: record, using: headerIndex)
-        let tags = parseTags(value(named: "tags", in: record, using: headerIndex))
+        let partOfSpeech = optionalValue(named: "partOfSpeech", in: record, using: headerIndex)
+            .map(partOfSpeechTokenizer.normalized)
+        let exampleJapanese = optionalValue(named: "exampleJapanese", in: record, using: headerIndex)
+        let exampleChinese = optionalValue(named: "exampleChinese", in: record, using: headerIndex)
+        let jlptLevel = optionalValue(named: "jlptLevel", in: record, using: headerIndex)
+        let tags = optionalValue(named: "tags", in: record, using: headerIndex).map(parseTags)
 
         var reasons: [String] = []
         if expression.isEmpty {
@@ -284,7 +294,7 @@ struct VocabularyCSVImportService {
             reasons.append("meaningChinese 必填")
         }
 
-        if !Self.allowedJLPTLevels.contains(jlptLevel) {
+        if let jlptLevel, !Self.allowedJLPTLevels.contains(jlptLevel) {
             reasons.append("jlptLevel 只能为 N5、N4、N3、N2、N1 或空值")
         }
 
@@ -326,6 +336,14 @@ struct VocabularyCSVImportService {
         return record.fields[index].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func optionalValue(named name: String, in record: CSVRecord, using headerIndex: [String: Int]) -> String? {
+        guard headerIndex[name] != nil else {
+            return nil
+        }
+
+        return value(named: name, in: record, using: headerIndex)
+    }
+
     private func parseTags(_ rawValue: String) -> [String] {
         var seenTags = Set<String>()
         var tags: [String] = []
@@ -344,17 +362,37 @@ struct VocabularyCSVImportService {
     }
 
     @MainActor
-    private func fetchExistingKeys(in context: ModelContext) throws -> Set<VocabularyWordImportKey> {
+    private func fetchExistingKeys(in context: ModelContext, wordBook: WordBook?) throws -> Set<VocabularyWordImportKey> {
         let words = try context.fetch(FetchDescriptor<VocabularyWord>())
-        return Set(words.map { VocabularyWordImportKey(expression: $0.japanese, reading: $0.kana) })
+        return Set(words
+            .filter { word in
+                guard let wordBook else {
+                    return true
+                }
+
+                return word.wordBook?.id == wordBook.id
+            }
+            .map { VocabularyWordImportKey(expression: $0.japanese, reading: $0.kana) })
     }
 
     @MainActor
-    private func fetchExistingWordsByKey(in context: ModelContext) throws -> [VocabularyWordImportKey: VocabularyWord] {
+    private func fetchExistingWordsByKey(
+        in context: ModelContext,
+        wordBook: WordBook?,
+        treatsNilAsAllWordBooks: Bool
+    ) throws -> [VocabularyWordImportKey: VocabularyWord] {
         let words = try context.fetch(FetchDescriptor<VocabularyWord>())
         var wordsByKey: [VocabularyWordImportKey: VocabularyWord] = [:]
 
         for word in words {
+            if let wordBook {
+                guard word.wordBook?.id == wordBook.id else {
+                    continue
+                }
+            } else if !treatsNilAsAllWordBooks {
+                continue
+            }
+
             let key = VocabularyWordImportKey(expression: word.japanese, reading: word.kana)
             if wordsByKey[key] == nil {
                 wordsByKey[key] = word
@@ -364,18 +402,19 @@ struct VocabularyCSVImportService {
         return wordsByKey
     }
 
-    private func makeWord(from row: VocabularyImportRow, now: Date) -> VocabularyWord {
+    private func makeWord(from row: VocabularyImportRow, wordBook: WordBook?, now: Date) -> VocabularyWord {
         let word = VocabularyWord(
             japanese: row.expression,
             kana: row.reading,
             chineseMeaning: row.meaningChinese,
-            partOfSpeech: row.partOfSpeech,
-            jlptLevel: row.jlptLevel,
-            exampleJapanese: row.exampleJapanese,
-            exampleChinese: row.exampleChinese,
-            tags: row.tags,
+            partOfSpeech: row.partOfSpeech.map(partOfSpeechTokenizer.normalized) ?? "",
+            jlptLevel: row.jlptLevel ?? "",
+            exampleJapanese: row.exampleJapanese ?? "",
+            exampleChinese: row.exampleChinese ?? "",
+            tags: row.tags ?? [],
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            wordBook: wordBook
         )
         word.progress = LearningProgress(
             state: .new,
@@ -388,13 +427,53 @@ struct VocabularyCSVImportService {
         return word
     }
 
+    @MainActor
+    private func resolveImportTarget(
+        _ target: VocabularyImportTarget?,
+        in context: ModelContext,
+        now: Date
+    ) throws -> WordBook? {
+        guard let target else {
+            return nil
+        }
+
+        switch target {
+        case .newWordBook(let name, let description):
+            var draft = WordBookDraft()
+            draft.name = name
+            draft.bookDescription = description
+            let sanitizedDraft = try WordBookService().validateAndSanitize(draft)
+            let wordBook = WordBook(
+                name: sanitizedDraft.name,
+                bookDescription: sanitizedDraft.bookDescription,
+                createdAt: now,
+                updatedAt: now
+            )
+            context.insert(wordBook)
+            return wordBook
+        case .existingWordBook(let id):
+            let books = try context.fetch(FetchDescriptor<WordBook>())
+            return books.first { $0.id == id }
+        }
+    }
+
     private func apply(row: VocabularyImportRow, to word: VocabularyWord, now: Date) {
         word.chineseMeaning = row.meaningChinese
-        word.partOfSpeech = row.partOfSpeech
-        word.exampleJapanese = row.exampleJapanese
-        word.exampleChinese = row.exampleChinese
-        word.jlptLevel = row.jlptLevel
-        word.tags = row.tags
+        if let partOfSpeech = row.partOfSpeech {
+            word.partOfSpeech = partOfSpeechTokenizer.normalized(partOfSpeech)
+        }
+        if let exampleJapanese = row.exampleJapanese {
+            word.exampleJapanese = exampleJapanese
+        }
+        if let exampleChinese = row.exampleChinese {
+            word.exampleChinese = exampleChinese
+        }
+        if let jlptLevel = row.jlptLevel {
+            word.jlptLevel = jlptLevel
+        }
+        if let tags = row.tags {
+            word.tags = tags
+        }
         word.updatedAt = now
     }
 }

@@ -25,6 +25,11 @@ final class StudySessionViewModelTests: XCTestCase {
             scheduler: DefaultReviewScheduler(calendar: calendar),
             speechService: speechService
         )
+        viewModel.updateSettings(
+            speechRate: AppSettings.defaultJapaneseSpeechRate,
+            autoSpeakWord: false,
+            autoSpeakExample: false
+        )
     }
 
     override func tearDown() {
@@ -101,10 +106,11 @@ final class StudySessionViewModelTests: XCTestCase {
 
         XCTAssertEqual(word.reviewLogs.count, 1)
         XCTAssertEqual(word.progress?.reviewCount, 1)
-        XCTAssertEqual(viewModel.summary?.reviewedCount, 1)
+        XCTAssertTrue(viewModel.isSpellingActive)
+        XCTAssertEqual(viewModel.spellingWords.map(\.japanese), ["学生"])
     }
 
-    func testCompletionShowsSummary() throws {
+    func testCompletionEntersSpellingBeforeSummary() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -116,9 +122,23 @@ final class StudySessionViewModelTests: XCTestCase {
         viewModel.handleShortcut(.showAnswer, context: context, now: now)
         viewModel.handleShortcut(.rate(.again), context: context, now: now)
 
+        XCTAssertTrue(viewModel.isSpellingActive)
+        XCTAssertNil(viewModel.summary)
+        XCTAssertEqual(viewModel.spellingWords.map(\.japanese), ["学生"])
+
+        viewModel.completeSpelling(
+            .init(
+                totalCount: 1,
+                firstAttemptCorrectCount: 1,
+                retryCorrectCount: 0,
+                remainingIncorrectCount: 0
+            )
+        )
+
         XCTAssertEqual(viewModel.summary?.reviewedCount, 1)
         XCTAssertEqual(viewModel.summary?.newWordCount, 1)
         XCTAssertEqual(viewModel.summary?.lapseCount, 0)
+        XCTAssertEqual(viewModel.summary?.spellingTotalCount, 1)
     }
 
     func testFavoriteShortcutTogglesFavorite() throws {
@@ -173,6 +193,70 @@ final class StudySessionViewModelTests: XCTestCase {
 
         XCTAssertEqual(speechService.spokenExamples, [])
         XCTAssertEqual(viewModel.speechState, .idle)
+    }
+
+    func testAdvancingToNextCardStopsCurrentSpeech() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        let first = makeWord("学生", state: .new, dueAt: now, createdAt: now)
+        let second = makeWord("確認", state: .new, dueAt: now, createdAt: addingMinutes(1, to: now))
+        context.insert(first)
+        context.insert(second)
+        try context.save()
+
+        viewModel.loadSession(context: context, now: now)
+        viewModel.handleShortcut(.speakWord, context: context, now: now)
+        viewModel.handleShortcut(.showAnswer, context: context, now: now)
+        viewModel.handleShortcut(.rate(.good), context: context, now: now)
+
+        XCTAssertEqual(speechService.stopCount, 1)
+        XCTAssertEqual(viewModel.speechState, .idle)
+        XCTAssertEqual(viewModel.currentWord?.japanese, "確認")
+    }
+
+    func testAutoSpeakTriggersOnlyWhenCurrentWordChanges() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        let first = makeWord("学生", state: .new, dueAt: now, createdAt: now)
+        let second = makeWord("確認", state: .new, dueAt: now, createdAt: addingMinutes(1, to: now))
+        context.insert(first)
+        context.insert(second)
+        try context.save()
+
+        viewModel.updateSettings(
+            speechRate: AppSettings.defaultJapaneseSpeechRate,
+            autoSpeakWord: true,
+            autoSpeakExample: false
+        )
+        viewModel.loadSession(context: context, now: now)
+
+        XCTAssertEqual(speechService.spokenWords, ["学生"])
+
+        viewModel.handleShortcut(.showAnswer, context: context, now: now)
+        viewModel.handleShortcut(.toggleFavorite, context: context, now: now)
+        XCTAssertEqual(speechService.spokenWords, ["学生"])
+
+        viewModel.handleShortcut(.rate(.good), context: context, now: now)
+        XCTAssertEqual(speechService.spokenWords, ["学生", "確認"])
+    }
+
+    func testAutoSpeakDoesNotTriggerWhenDisabled() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        context.insert(makeWord("学生", state: .new, dueAt: now, createdAt: now))
+        try context.save()
+
+        viewModel.updateSettings(
+            speechRate: AppSettings.defaultJapaneseSpeechRate,
+            autoSpeakWord: false,
+            autoSpeakExample: false
+        )
+        viewModel.loadSession(context: context, now: now)
+
+        XCTAssertEqual(speechService.spokenWords, [])
     }
 
     private func makeWord(

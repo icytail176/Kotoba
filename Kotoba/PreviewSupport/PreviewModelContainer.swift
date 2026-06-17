@@ -41,7 +41,15 @@ enum PreviewModelContainer {
             }
 
             let referenceDate = Date(timeIntervalSinceReferenceDate: 0)
-            for word in SampleVocabularyWords.makeWords(referenceDate: referenceDate) {
+            let wordBook = WordBook(
+                name: "示例词书",
+                bookDescription: "用于 SwiftUI Preview 的本地示例词书。",
+                createdAt: referenceDate,
+                updatedAt: referenceDate
+            )
+            context.insert(wordBook)
+
+            for word in SampleVocabularyWords.makeWords(referenceDate: referenceDate, wordBook: wordBook) {
                 context.insert(word)
             }
 

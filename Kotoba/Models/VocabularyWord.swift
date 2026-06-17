@@ -24,6 +24,8 @@ final class VocabularyWord {
     var isArchived: Bool
     var isFavorite: Bool
 
+    var wordBook: WordBook?
+
     @Relationship(deleteRule: .cascade, inverse: \LearningProgress.word)
     var progress: LearningProgress?
 
@@ -44,6 +46,7 @@ final class VocabularyWord {
         updatedAt: Date = Date(),
         isArchived: Bool = false,
         isFavorite: Bool = false,
+        wordBook: WordBook? = nil,
         progress: LearningProgress? = nil,
         reviewLogs: [ReviewLog] = []
     ) {
@@ -60,6 +63,7 @@ final class VocabularyWord {
         self.updatedAt = updatedAt
         self.isArchived = isArchived
         self.isFavorite = isFavorite
+        self.wordBook = wordBook
         self.progress = progress
         self.reviewLogs = reviewLogs
     }
