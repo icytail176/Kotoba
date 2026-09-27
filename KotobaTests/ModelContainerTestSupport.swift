@@ -7,6 +7,7 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 func makeInMemoryTestContainer(file: StaticString = #filePath, line: UInt = #line) throws -> ModelContainer {
@@ -15,6 +16,7 @@ func makeInMemoryTestContainer(file: StaticString = #filePath, line: UInt = #lin
     do {
         return try ModelContainer(
             for: KotobaSchema.schema,
+            migrationPlan: KotobaMigrationPlan.self,
             configurations: [configuration]
         )
     } catch {

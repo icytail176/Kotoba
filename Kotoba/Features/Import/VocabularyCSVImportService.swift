@@ -106,9 +106,28 @@ struct VocabularyImportResult: Identifiable {
     let ignoredErrorCount: Int
     let wordBookID: UUID?
     let wordBookName: String?
+    let qualityReport: VocabularyImportQualityReport?
 
     var totalChangedCount: Int {
         insertedCount + updatedCount
+    }
+
+    init(
+        insertedCount: Int,
+        updatedCount: Int,
+        skippedDuplicateCount: Int,
+        ignoredErrorCount: Int,
+        wordBookID: UUID?,
+        wordBookName: String?,
+        qualityReport: VocabularyImportQualityReport? = nil
+    ) {
+        self.insertedCount = insertedCount
+        self.updatedCount = updatedCount
+        self.skippedDuplicateCount = skippedDuplicateCount
+        self.ignoredErrorCount = ignoredErrorCount
+        self.wordBookID = wordBookID
+        self.wordBookName = wordBookName
+        self.qualityReport = qualityReport
     }
 }
 

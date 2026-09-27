@@ -7,6 +7,7 @@
 
 import Foundation
 import XCTest
+@testable import Kotoba
 
 final class DefaultReviewSchedulerTests: XCTestCase {
     private var calendar: Calendar!
@@ -45,7 +46,7 @@ final class DefaultReviewSchedulerTests: XCTestCase {
         )
         assertNewWordRating(.hard, expectedDays: 1, now: now)
         assertNewWordRating(.good, expectedDays: 2, now: now)
-        assertNewWordRating(.easy, expectedDays: 4, now: now)
+        assertMastered(currentState: .new, currentDays: 0, reviewCount: 0, lapseCount: 0, now: now)
     }
 
     func testReviewWordRatings() {
@@ -67,7 +68,7 @@ final class DefaultReviewSchedulerTests: XCTestCase {
         )
         assertReviewRating(.hard, currentDays: 10, expectedDays: 12, now: now)
         assertReviewRating(.good, currentDays: 10, expectedDays: 20, now: now)
-        assertReviewRating(.easy, currentDays: 10, expectedDays: 30, now: now)
+        assertMastered(currentState: .review, currentDays: 10, reviewCount: 5, lapseCount: 1, now: now)
     }
 
     func testFuzzyRatingAt59DaysCapsTo60Days() {
@@ -108,29 +109,16 @@ final class DefaultReviewSchedulerTests: XCTestCase {
         )
     }
 
-    func testEasyRatingAt30DaysCapsTo60Days() {
+    func testEasyRatingSuspendsInsteadOfScheduling() {
         let now = makeDate(year: 2026, month: 6, day: 16)
 
-        assertSchedule(
-            currentState: .review,
-            currentIntervalDays: 30,
-            reviewCount: 12,
-            lapseCount: 0,
-            rating: .easy,
-            now: now,
-            expectedState: .review,
-            expectedIntervalDays: 60,
-            expectedNextReviewAt: addingDays(60, to: now),
-            expectedDidLapse: false,
-            expectedReviewCount: 13,
-            expectedLapseCount: 0
-        )
+        assertMastered(currentState: .review, currentDays: 30, reviewCount: 12, lapseCount: 0, now: now)
     }
 
-    func testRepeatedEasyRatingAt60DaysStaysAt60Days() {
+    func testSuspendedWordRemainsSuspendedWithoutIncrementingCounts() {
         let now = makeDate(year: 2026, month: 6, day: 16)
         let first = scheduler.schedule(
-            currentState: .review,
+            currentState: .suspended,
             currentIntervalDays: 60,
             reviewCount: 12,
             lapseCount: 0,
@@ -146,11 +134,10 @@ final class DefaultReviewSchedulerTests: XCTestCase {
             now: first.nextReviewAt
         )
 
+        XCTAssertEqual(first.learningState, .suspended)
         XCTAssertEqual(first.intervalDays, 60)
-        XCTAssertEqual(first.nextReviewAt, addingDays(60, to: now))
-        XCTAssertEqual(second.intervalDays, 60)
-        XCTAssertEqual(second.nextReviewAt, addingDays(60, to: first.nextReviewAt))
-        XCTAssertEqual(second.reviewCount, 14)
+        XCTAssertEqual(second.learningState, .suspended)
+        XCTAssertEqual(second.reviewCount, 12)
         XCTAssertEqual(second.lapseCount, 0)
     }
 
@@ -273,6 +260,29 @@ final class DefaultReviewSchedulerTests: XCTestCase {
             expectedDidLapse: false,
             expectedReviewCount: 6,
             expectedLapseCount: 1
+        )
+    }
+
+    private func assertMastered(
+        currentState: LearningState,
+        currentDays: Int,
+        reviewCount: Int,
+        lapseCount: Int,
+        now: Date
+    ) {
+        assertSchedule(
+            currentState: currentState,
+            currentIntervalDays: currentDays,
+            reviewCount: reviewCount,
+            lapseCount: lapseCount,
+            rating: .easy,
+            now: now,
+            expectedState: .suspended,
+            expectedIntervalDays: 0,
+            expectedNextReviewAt: now,
+            expectedDidLapse: false,
+            expectedReviewCount: reviewCount + 1,
+            expectedLapseCount: lapseCount
         )
     }
 

@@ -23,6 +23,10 @@ final class VocabularyWord {
     var updatedAt: Date
     var isArchived: Bool
     var isFavorite: Bool
+    var loanwordSourceTerm: String?
+    var loanwordSourceLanguageCode: String?
+    var loanwordIsWasei: Bool = false
+    var loanwordIsPartial: Bool = false
 
     var wordBook: WordBook?
 
@@ -46,6 +50,10 @@ final class VocabularyWord {
         updatedAt: Date = Date(),
         isArchived: Bool = false,
         isFavorite: Bool = false,
+        loanwordSourceTerm: String? = nil,
+        loanwordSourceLanguageCode: String? = nil,
+        loanwordIsWasei: Bool = false,
+        loanwordIsPartial: Bool = false,
         wordBook: WordBook? = nil,
         progress: LearningProgress? = nil,
         reviewLogs: [ReviewLog] = []
@@ -63,6 +71,10 @@ final class VocabularyWord {
         self.updatedAt = updatedAt
         self.isArchived = isArchived
         self.isFavorite = isFavorite
+        self.loanwordSourceTerm = loanwordSourceTerm
+        self.loanwordSourceLanguageCode = loanwordSourceLanguageCode
+        self.loanwordIsWasei = loanwordIsWasei
+        self.loanwordIsPartial = loanwordIsPartial
         self.wordBook = wordBook
         self.progress = progress
         self.reviewLogs = reviewLogs

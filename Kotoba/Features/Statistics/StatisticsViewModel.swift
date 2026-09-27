@@ -2,8 +2,6 @@
 //  StatisticsViewModel.swift
 //  Kotoba
 //
-//  Created by Codex on 2026/6/16.
-//
 
 import Combine
 import Foundation
@@ -27,34 +25,34 @@ final class StatisticsViewModel: ObservableObject {
         self.calculator = calculator ?? StudyStatisticsCalculator()
     }
 
-    func load(
-        context: ModelContext,
-        calendar: Calendar,
-        now: Date = Date()
-    ) {
+    func load(context: ModelContext, calendar: Calendar, now: Date = Date()) {
         loadTask?.cancel()
         isLoading = true
         errorMessage = nil
 
-        do {
-            let input = try service.makeInput(in: context)
-            let calculator = calculator
-            loadTask = Task { [weak self, input, calculator, calendar, now] in
-                let statistics = await Task.detached(priority: .userInitiated) {
-                    calculator.calculate(input: input, calendar: calendar, now: now)
-                }.value
+        let service = service
+        let calculator = calculator
+        let container = context.container
 
-                guard !Task.isCancelled else {
-                    return
-                }
+        loadTask = Task { [weak self, service, calculator, container, calendar, now] in
+            do {
+                // Cumulative counts and streaks must always use the complete history.
+                let snapshot = try await service.makeSnapshot(in: container)
+                guard !Task.isCancelled else { return }
+
+                let statistics = await Task.detached(priority: .userInitiated) {
+                    calculator.calculate(input: snapshot.input, calendar: calendar, now: now)
+                }.value
+                guard !Task.isCancelled else { return }
 
                 self?.statistics = statistics
                 self?.isLoading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.statistics = nil
+                self?.isLoading = false
+                self?.errorMessage = "无法加载学习统计：\(error.localizedDescription)"
             }
-        } catch {
-            statistics = nil
-            isLoading = false
-            errorMessage = "无法加载学习统计：\(error.localizedDescription)"
         }
     }
 }

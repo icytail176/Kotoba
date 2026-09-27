@@ -7,6 +7,7 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 final class HomeDashboardServiceTests: XCTestCase {
@@ -44,12 +45,61 @@ final class HomeDashboardServiceTests: XCTestCase {
         let service = HomeDashboardService()
         let result = try service.makeSnapshot(
             in: context,
-            selectedIDString: selectedBook.id.uuidString,
-            dailyNewWordLimit: 20
+            selectedIDString: selectedBook.id.uuidString
         )
 
         XCTAssertEqual(result.snapshot.example?.wordID, selectedWord.id)
         XCTAssertEqual(result.snapshot.example?.expression, "努力")
+    }
+
+    func testSnapshotShowsAllRemainingNewWordsAfterFormerDailyLimitIsExceeded() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let book = WordBook(name: "无限学习词书")
+        let now = Date(timeIntervalSinceReferenceDate: 900_000_000)
+        context.insert(book)
+
+        for index in 0..<25 {
+            let word = makeWord(
+                "已学\(index)",
+                exampleJapanese: "例句",
+                exampleChinese: "例句",
+                wordBook: book
+            )
+            word.progress?.state = .review
+            word.progress?.dueAt = now.addingTimeInterval(2 * 86_400)
+            word.reviewLogs = [
+                ReviewLog(
+                    reviewedAt: now,
+                    rating: .good,
+                    previousState: .new,
+                    nextState: .review,
+                    previousIntervalDays: 0,
+                    nextIntervalDays: 2,
+                    scheduledDueAt: now.addingTimeInterval(2 * 86_400),
+                    word: word
+                )
+            ]
+            context.insert(word)
+        }
+
+        for index in 0..<7 {
+            context.insert(makeWord(
+                "剩余\(index)",
+                exampleJapanese: "例句",
+                exampleChinese: "例句",
+                wordBook: book
+            ))
+        }
+        try context.save()
+
+        let result = try HomeDashboardService().makeSnapshot(
+            in: context,
+            selectedIDString: book.id.uuidString,
+            now: now
+        )
+
+        XCTAssertEqual(result.snapshot.remainingNewWordCount, 7)
     }
 
     func testHighlightingMarksAllTargetMatchesAndSurvivesMissingTarget() {
@@ -61,6 +111,43 @@ final class HomeDashboardServiceTests: XCTestCase {
 
         let missing = service.segments(in: "毎日続けます。", target: "努力")
         XCTAssertEqual(missing, [HighlightedTextSegment(text: "毎日続けます。", isHighlighted: false)])
+    }
+
+    func testDashboardQueueAndWordbookSummaryShareDuePolicy() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 9))!
+        let laterToday = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now)!
+        let book = WordBook(name: "到期口径")
+        let review = makeWord("復習", exampleJapanese: "例句", exampleChinese: "例句", wordBook: book)
+        review.progress?.state = .review
+        review.progress?.dueAt = laterToday
+        let learning = makeWord("学習", exampleJapanese: "例句", exampleChinese: "例句", wordBook: book)
+        learning.progress?.state = .learning
+        learning.progress?.dueAt = laterToday
+        context.insert(book)
+        context.insert(review)
+        context.insert(learning)
+        try context.save()
+
+        let dashboard = try HomeDashboardService().makeSnapshot(
+            in: context,
+            selectedIDString: book.id.uuidString,
+            now: now
+        ).snapshot
+        let queue = try StudyQueueService(calendar: calendar).buildSession(
+            in: context,
+            wordBook: book,
+            mode: .dueReviewsOnly,
+            now: now,
+            randomizesQueue: false
+        )
+        let summary = WordBookService().summary(for: book, selectedID: book.id, now: now)
+
+        XCTAssertEqual(dashboard.dueReviewCount, 1)
+        XCTAssertEqual(queue.items.map(\.id), [review.id])
+        XCTAssertEqual(summary.dueReviewCount, 1)
     }
 
     private func makeWord(

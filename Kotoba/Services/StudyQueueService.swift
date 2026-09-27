@@ -9,12 +9,15 @@ import Foundation
 import SwiftData
 
 struct StudyQueueService {
-    static let defaultDailyNewWordLimit = 20
-
     private let calendar: Calendar
+    private let shuffle: ([StudySession.Item]) -> [StudySession.Item]
 
-    init(calendar: Calendar = .current) {
+    init(
+        calendar: Calendar = .current,
+        shuffle: @escaping ([StudySession.Item]) -> [StudySession.Item] = { $0.shuffled() }
+    ) {
         self.calendar = calendar
+        self.shuffle = shuffle
     }
 
     func buildSession(
@@ -22,44 +25,53 @@ struct StudyQueueService {
         wordBook: WordBook? = nil,
         mode: StudySession.Mode = .mixed,
         now: Date,
-        dailyNewWordLimit: Int = Self.defaultDailyNewWordLimit,
-        randomizesQueue: Bool = false
+        studyGroupNewWordCount: Int = AppSettings.defaultStudyGroupNewWordCount,
+        reviewGroupWordCount: Int = AppSettings.defaultReviewGroupWordCount,
+        randomizesQueue: Bool = true
     ) throws -> StudySession {
-        let words = try context.fetch(FetchDescriptor<VocabularyWord>())
-        let activeWords = scopedActiveWords(words, wordBook: wordBook)
-        let dueItems = mode == .newWordsOnly ? [] : dueReviewItems(from: activeWords, now: now)
-        let newWordsAlreadyIntroducedToday = countNewWordsIntroducedToday(from: activeWords, now: now)
-        let remainingNewWordSlots = max(0, dailyNewWordLimit - newWordsAlreadyIntroducedToday)
-        let newItems: [StudySession.Item]
+        try PerformanceTrace.measure("Study queue build") {
+            let clampedStudyGroupNewWordCount = AppSettings.clampedStudyGroupNewWordCount(studyGroupNewWordCount)
+            let clampedReviewGroupWordCount = AppSettings.clampedReviewGroupWordCount(reviewGroupWordCount)
+            let words: [VocabularyWord]
+            if let wordBook {
+                words = wordBook.words
+            } else {
+                words = try context.fetch(FetchDescriptor<VocabularyWord>())
+            }
+            let activeWords = scopedActiveWords(words, wordBook: wordBook)
+            let dueCandidates = mode == .newWordsOnly
+                ? []
+                : dueReviewItems(from: activeWords, now: now)
+            let newCandidates: [StudySession.Item]
 
-        switch mode {
-        case .mixed, .newWordsOnly:
-            newItems = newWordItems(
-                from: activeWords,
-                excluding: Set(dueItems.map(\.id)),
-                limit: remainingNewWordSlots,
-                now: now
+            switch mode {
+            case .mixed, .newWordsOnly:
+                newCandidates = newWordItems(
+                    from: activeWords,
+                    excluding: Set(dueCandidates.map(\.id)),
+                    now: now
+                )
+            case .dueReviewsOnly:
+                newCandidates = []
+            }
+
+            let items: [StudySession.Item]
+            if randomizesQueue {
+                items = selectRandomizedGroup(
+                    from: shuffle(dueCandidates + newCandidates),
+                    newWordGroupLimit: clampedStudyGroupNewWordCount,
+                    reviewLimit: clampedReviewGroupWordCount
+                )
+            } else {
+                items = Array(dueCandidates.prefix(clampedReviewGroupWordCount))
+                    + Array(newCandidates.prefix(clampedStudyGroupNewWordCount))
+            }
+
+            return StudySession(
+                status: items.isEmpty ? .completed : .ready,
+                items: items
             )
-        case .dueReviewsOnly:
-            newItems = []
         }
-
-        let items: [StudySession.Item]
-        switch mode {
-        case .mixed:
-            items = randomizesQueue ? dueItems.shuffled() + newItems.shuffled() : dueItems + newItems
-        case .newWordsOnly:
-            items = randomizesQueue ? newItems.shuffled() : newItems
-        case .dueReviewsOnly:
-            items = randomizesQueue ? dueItems.shuffled() : dueItems
-        }
-
-        return StudySession(
-            status: items.isEmpty ? .completed : .ready,
-            items: items,
-            newWordLimit: dailyNewWordLimit,
-            newWordsAlreadyIntroducedToday: newWordsAlreadyIntroducedToday
-        )
     }
 
     private func scopedActiveWords(_ words: [VocabularyWord], wordBook: WordBook?) -> [VocabularyWord] {
@@ -77,10 +89,10 @@ struct StudyQueueService {
     }
 
     private func dueReviewItems(from words: [VocabularyWord], now: Date) -> [StudySession.Item] {
-        words.compactMap { word -> StudySession.Item? in
+        return words.compactMap { word -> StudySession.Item? in
             guard let progress = word.progress,
                   isReviewQueueState(progress.state),
-                  progress.dueAt <= now else {
+                  StudyDuePolicy.isDue(progress: progress, now: now, calendar: calendar) else {
                 return nil
             }
 
@@ -92,24 +104,29 @@ struct StudyQueueService {
             )
         }
         .sorted {
-            if $0.dueAt == $1.dueAt {
-                return $0.word.createdAt < $1.word.createdAt
+            let lhsDueDate = calendar.startOfDay(for: $0.dueAt)
+            let rhsDueDate = calendar.startOfDay(for: $1.dueAt)
+            if lhsDueDate != rhsDueDate {
+                return lhsDueDate < rhsDueDate
             }
 
-            return $0.dueAt < $1.dueAt
+            if $0.dueAt != $1.dueAt {
+                return $0.dueAt < $1.dueAt
+            }
+
+            if $0.word.createdAt == $1.word.createdAt {
+                return $0.word.japanese < $1.word.japanese
+            }
+
+            return $0.word.createdAt < $1.word.createdAt
         }
     }
 
     private func newWordItems(
         from words: [VocabularyWord],
         excluding excludedIDs: Set<UUID>,
-        limit: Int,
         now: Date
     ) -> [StudySession.Item] {
-        guard limit > 0 else {
-            return []
-        }
-
         return words
             .filter { word in
                 guard !excludedIDs.contains(word.id),
@@ -126,7 +143,6 @@ struct StudyQueueService {
 
                 return $0.createdAt < $1.createdAt
             }
-            .prefix(limit)
             .map { word in
                 StudySession.Item(
                     id: word.id,
@@ -137,22 +153,38 @@ struct StudyQueueService {
             }
     }
 
-    private func countNewWordsIntroducedToday(from words: [VocabularyWord], now: Date) -> Int {
-        var introducedWordIDs = Set<UUID>()
+    private func selectRandomizedGroup(
+        from candidates: [StudySession.Item],
+        newWordGroupLimit: Int,
+        reviewLimit: Int
+    ) -> [StudySession.Item] {
+        var selected: [StudySession.Item] = []
+        var selectedNewWordCount = 0
+        var selectedReviewCount = 0
+        let availableNewWordCount = candidates.lazy.filter { $0.kind == .newWord }.count
+        let availableReviewCount = candidates.count - availableNewWordCount
+        let targetNewWordCount = min(newWordGroupLimit, availableNewWordCount)
+        let targetReviewCount = min(reviewLimit, availableReviewCount)
 
-        for word in words {
-            guard !introducedWordIDs.contains(word.id) else {
+        for item in candidates {
+            switch item.kind {
+            case .newWord where selectedNewWordCount < targetNewWordCount:
+                selected.append(item)
+                selectedNewWordCount += 1
+            case .dueReview where selectedReviewCount < targetReviewCount:
+                selected.append(item)
+                selectedReviewCount += 1
+            default:
                 continue
             }
 
-            if word.reviewLogs.contains(where: { log in
-                log.previousState == .new && calendar.isDate(log.reviewedAt, inSameDayAs: now)
-            }) {
-                introducedWordIDs.insert(word.id)
+            if selectedNewWordCount == targetNewWordCount,
+               selectedReviewCount == targetReviewCount {
+                break
             }
         }
 
-        return introducedWordIDs.count
+        return selected
     }
 
     private func isReviewQueueState(_ state: LearningState) -> Bool {
@@ -163,4 +195,5 @@ struct StudyQueueService {
             false
         }
     }
+
 }

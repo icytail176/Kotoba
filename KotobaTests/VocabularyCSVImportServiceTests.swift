@@ -7,6 +7,7 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 final class VocabularyCSVImportServiceTests: XCTestCase {
@@ -98,6 +99,37 @@ final class VocabularyCSVImportServiceTests: XCTestCase {
         XCTAssertEqual(words.first?.exampleChinese, "")
         XCTAssertEqual(words.first?.jlptLevel, "")
         XCTAssertEqual(words.first?.tags, [])
+    }
+
+    func testEachRequiredHeaderIsMandatoryAndUnknownHeadersAreIgnored() throws {
+        let required = ["expression", "reading", "meaningChinese"]
+        for missing in required {
+            let container = try makeInMemoryTestContainer()
+            let headers = required.filter { $0 != missing }
+            let values = headers.map { header in
+                switch header {
+                case "expression": return "猫"
+                case "reading": return "ねこ"
+                default: return "猫"
+                }
+            }
+            let data = csvData(headers.joined(separator: ",") + "\n" + values.joined(separator: ","))
+            XCTAssertThrowsError(
+                try service.makePreview(from: data, fileName: "missing.csv", context: container.mainContext)
+            ) { error in
+                guard case VocabularyCSVImportError.missingHeaders(let headers) = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(headers, [missing])
+            }
+        }
+
+        let container = try makeInMemoryTestContainer()
+        let data = csvData("expression,reading,meaningChinese,externalNote\n猫,ねこ,猫,ignored")
+        let preview = try service.makePreview(from: data, fileName: "extra.csv", context: container.mainContext)
+        let result = try service.importRows(from: preview, duplicateHandling: .skip, context: container.mainContext)
+        XCTAssertEqual(result.insertedCount, 1)
+        XCTAssertEqual(try fetchWords(in: container.mainContext).first?.japanese, "猫")
     }
 
     func testValidationReportsRequiredFieldsAndInvalidJLPT() throws {
@@ -405,6 +437,64 @@ final class VocabularyCSVImportServiceTests: XCTestCase {
         XCTAssertEqual(existingB.progress?.reviewCount, 9)
     }
 
+    func testBundledSampleVocabularyCSVImportsIntoNewWordBookAndCoversFiltersSearchAndConjugation() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let data = try Data(contentsOf: bundledSampleCSVURL())
+
+        let preview = try service.makePreview(
+            from: data,
+            fileName: "sample_kotoba_vocabulary.csv",
+            context: context,
+            createsNewWordBook: true
+        )
+
+        XCTAssertEqual(preview.totalRows, 20)
+        XCTAssertEqual(preview.validRows, 20)
+        XCTAssertEqual(preview.errorRows, 0)
+        XCTAssertEqual(preview.duplicateCount, 0)
+
+        let result = try service.importRows(
+            from: preview,
+            duplicateHandling: .skip,
+            context: context,
+            target: .newWordBook(name: "Kotoba 示例词书", description: "用于导入功能验证")
+        )
+        let wordBook = try XCTUnwrap(try context.fetch(FetchDescriptor<WordBook>()).first)
+        let words = try fetchWords(in: context)
+
+        XCTAssertEqual(result.insertedCount, 20)
+        XCTAssertEqual(result.updatedCount, 0)
+        XCTAssertEqual(result.wordBookID, wordBook.id)
+        XCTAssertEqual(words.count, 20)
+        XCTAssertTrue(words.allSatisfy { $0.wordBook?.id == wordBook.id })
+
+        let imported = Dictionary(uniqueKeysWithValues: words.map { ($0.japanese, $0) })
+        XCTAssertEqual(imported["食べる"]?.partOfSpeech, "动词/一段动词")
+        XCTAssertEqual(imported["説明"]?.partOfSpeech, "名词/サ变动词")
+        XCTAssertEqual(imported["食べる"]?.tags, ["动作", "饮食", "活用测试"])
+        XCTAssertEqual(Set(words.map(\.jlptLevel)), Set(["N5", "N4", "N3"]))
+
+        let wordbookService = WordbookService()
+        XCTAssertFalse(wordsMatching("名词", words: words, currentWordBookID: wordBook.id, service: wordbookService).isEmpty)
+        XCTAssertTrue(wordsMatching("五段动词", words: words, currentWordBookID: wordBook.id, service: wordbookService).contains { $0.japanese == "帰る" })
+        XCTAssertTrue(wordsMatching("一段动词", words: words, currentWordBookID: wordBook.id, service: wordbookService).contains { $0.japanese == "増える" })
+        XCTAssertTrue(wordsMatching("サ变动词", words: words, currentWordBookID: wordBook.id, service: wordbookService).contains { $0.japanese == "確認" })
+        XCTAssertTrue(wordsMatching("い形容词", words: words, currentWordBookID: wordBook.id, service: wordbookService).contains { $0.japanese == "いい" })
+        XCTAssertTrue(wordsMatching("な形容词", words: words, currentWordBookID: wordBook.id, service: wordbookService).contains { $0.japanese == "静か" })
+
+        XCTAssertNotNil(imported["食べる"].flatMap { ConjugationEngine().generate(for: $0) })
+        XCTAssertEqual(imported["ゆっくり"].flatMap { ConjugationEngine().generate(for: $0) }?.conjugationClass, ConjugationClass.none)
+
+        let suggestions = try HomeSearchService().suggestions(
+            in: context,
+            query: "活用测试",
+            currentWordBookID: wordBook.id,
+            limit: 20
+        )
+        XCTAssertTrue(suggestions.contains { $0.expression == "食べる" })
+    }
+
     private func csvData(_ csv: String, file: StaticString = #filePath, line: UInt = #line) -> Data {
         guard let data = csv.data(using: .utf8) else {
             XCTFail("Failed to encode CSV as UTF-8", file: file, line: line)
@@ -446,5 +536,31 @@ final class VocabularyCSVImportServiceTests: XCTestCase {
 
     private func fetchWords(in context: ModelContext) throws -> [VocabularyWord] {
         try context.fetch(FetchDescriptor<VocabularyWord>())
+    }
+
+    private func bundledSampleCSVURL(file: StaticString = #filePath, line: UInt = #line) throws -> URL {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let url = testsDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("Kotoba/Resources/sample_kotoba_vocabulary.csv")
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            XCTFail("Missing bundled sample CSV at \(url.path)", file: file, line: line)
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        return url
+    }
+
+    private func wordsMatching(
+        _ partOfSpeech: String,
+        words: [VocabularyWord],
+        currentWordBookID: UUID,
+        service: WordbookService
+    ) -> [VocabularyWord] {
+        var filters = WordbookFilters()
+        filters.partOfSpeech = partOfSpeech
+
+        return service.filter(words, using: filters, currentWordBookID: currentWordBookID)
     }
 }

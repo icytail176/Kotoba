@@ -9,6 +9,28 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+enum WordbookLayoutMode: Equatable {
+    case compact
+    case coreColumns
+    case fullColumns
+}
+
+enum WordbookLayoutPolicy {
+    static let coreColumnsWidth: CGFloat = 580
+    static let fullColumnsWidth: CGFloat = 820
+    static let splitDetailWidth: CGFloat = 860
+
+    static func mode(for availableWidth: CGFloat) -> WordbookLayoutMode {
+        if availableWidth < coreColumnsWidth { return .compact }
+        if availableWidth < fullColumnsWidth { return .coreColumns }
+        return .fullColumns
+    }
+
+    static func showsSplitDetail(for availableWidth: CGFloat) -> Bool {
+        availableWidth >= splitDetailWidth
+    }
+}
+
 struct WordbookView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(AppSettings.selectedWordBookIDKey) private var selectedWordBookID = ""
@@ -107,7 +129,11 @@ struct WordbookView: View {
                 },
                 onConfirm: {
                     importViewModel.confirmImport(context: modelContext)
-                    viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
+                    viewModel.loadWords(
+                        context: modelContext,
+                        selectedWordBookID: selectedWordBookID,
+                        invalidatesOptionSets: true
+                    )
                 }
             )
         }
@@ -117,7 +143,11 @@ struct WordbookView: View {
                     selectedWordBookID = wordBookID.uuidString
                 }
                 importViewModel.dismissResult()
-                viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
+                viewModel.loadWords(
+                    context: modelContext,
+                    selectedWordBookID: selectedWordBookID,
+                    invalidatesOptionSets: true
+                )
             }
         }
         .deleteConfirmation(
@@ -172,17 +202,37 @@ struct WordbookView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .alert(
+            "操作完成",
+            isPresented: Binding(
+                get: { viewModel.successMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.successMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("好") {
+                viewModel.successMessage = nil
+            }
+        } message: {
+            Text(viewModel.successMessage ?? "")
+        }
     }
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.words.isEmpty {
+        if viewModel.isLoadingWords && !viewModel.hasLoadedWords {
+            ProgressView("正在加载单词本…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.hasLoadedWords && viewModel.matchingWordCount == 0 && !viewModel.isFiltering {
             EmptyStateView(
                 systemImage: "books.vertical",
                 title: "单词本还是空的",
                 message: "可以通过新增单词或 CSV 导入创建本地词书。"
             )
-        } else if viewModel.filteredWords.isEmpty {
+        } else if viewModel.hasLoadedWords && viewModel.filteredWords.isEmpty {
             VStack(spacing: 14) {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
@@ -195,16 +245,24 @@ struct WordbookView: View {
                 }
             }
         } else {
-            if viewModel.selectedWord == nil {
-                wordTable
-                    .frame(minWidth: 360, idealWidth: 560, maxWidth: .infinity)
-            } else {
+            GeometryReader { proxy in
+                wordBrowser(availableWidth: proxy.size.width)
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func wordBrowser(availableWidth: CGFloat) -> some View {
+        let mode = WordbookLayoutPolicy.mode(for: availableWidth)
+        if let selectedWord = viewModel.selectedWord {
+            if WordbookLayoutPolicy.showsSplitDetail(for: availableWidth) {
                 HSplitView {
-                    wordTable
-                        .frame(minWidth: 360, idealWidth: 560, maxWidth: .infinity)
+                    wordTablePanel(mode: mode)
+                        .frame(minWidth: 260, idealWidth: 500, maxWidth: .infinity)
 
                     WordDetailView(
-                        word: viewModel.selectedWord,
+                        word: selectedWord,
                         onEdit: {
                             viewModel.beginEditSelectedWord()
                         },
@@ -213,93 +271,192 @@ struct WordbookView: View {
                         },
                         onResetProgress: {
                             viewModel.requestResetProgressForSelectedWord()
+                        },
+                        onClose: {
+                            viewModel.clearSelection()
                         }
                     )
-                    .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
+                    .frame(minWidth: 200, idealWidth: 300, maxWidth: 400)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity)
+            } else {
+                WordDetailView(
+                    word: selectedWord,
+                    onEdit: { viewModel.beginEditSelectedWord() },
+                    onDelete: { viewModel.requestDeleteSelectedWord() },
+                    onResetProgress: { viewModel.requestResetProgressForSelectedWord() },
+                    onClose: { viewModel.clearSelection() }
+                )
+            }
+        } else {
+            wordTablePanel(mode: mode)
+                .frame(minWidth: 260, idealWidth: 520, maxWidth: .infinity)
+        }
+    }
+
+    private func wordTablePanel(mode: WordbookLayoutMode) -> some View {
+        VStack(spacing: 0) {
+            if mode == .compact {
+                compactWordList
+            } else {
+                wordTable(mode: mode)
+            }
+
+            if viewModel.matchingWordCount > 0 {
+                Divider()
+                HStack {
+                    Text(wordCountDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        viewModel.goToPreviousPage(context: modelContext)
+                    } label: {
+                        Label("上一页", systemImage: "chevron.left")
+                    }
+                    .disabled(!viewModel.hasPreviousPage || viewModel.isLoadingWords)
+
+                    Text(viewModel.pageDescription)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 74)
+
+                    Button {
+                        viewModel.goToNextPage(context: modelContext)
+                    } label: {
+                        Label("下一页", systemImage: "chevron.right")
+                    }
+                    .disabled(!viewModel.hasNextPage || viewModel.isLoadingWords)
+                }
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
         }
     }
 
-    private var wordTable: some View {
+    private var wordCountDescription: String {
+        if viewModel.isMatchingWordCountExact {
+            return "共 \(viewModel.matchingWordCount) 条，本页 \(viewModel.filteredWords.count) 条"
+        }
+        return "本页 \(viewModel.filteredWords.count) 条"
+    }
+
+    private func wordTable(mode: WordbookLayoutMode) -> some View {
         Table(viewModel.filteredWords, selection: selectedWordBinding) {
             TableColumn("单词") { word in
                 HStack(spacing: 6) {
-                    Text(word.japanese)
+                    Text(word.expression)
                         .fontWeight(.medium)
 
                     if word.isFavorite {
                         Image(systemName: "star.fill")
                             .foregroundStyle(.yellow)
                     }
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
             }
-            .width(min: 100, ideal: 140, max: 220)
-
-            TableColumn("假名") { word in
-                Text(word.kana)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .width(min: 100, ideal: 130, max: 200)
-
-            TableColumn("中文释义") { word in
-                Text(word.chineseMeaning)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .width(min: 120, ideal: 170, max: 280)
-
-            TableColumn("JLPT") { word in
-                Text(word.jlptLevel.isEmpty ? "-" : word.jlptLevel)
-                    .lineLimit(1)
-            }
-            .width(min: 60, ideal: 70, max: 90)
-
-            TableColumn("词性") { word in
-                Text(word.partOfSpeech.isEmpty ? "-" : word.partOfSpeech)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+        }
             .width(min: 90, ideal: 120, max: 180)
 
-            TableColumn("状态") { word in
-                Text(word.progress?.state.displayName ?? "-")
+            TableColumn("假名") { word in
+                Text(word.reading)
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .width(min: 90, ideal: 110, max: 160)
-        }
-        .frame(minWidth: 0, maxWidth: .infinity)
-        .contextMenu(forSelectionType: VocabularyWord.ID.self) { selection in
-            Button("编辑") {
-                if let id = selection.first {
-                    viewModel.selectedWordID = id
+            .width(min: 90, ideal: 110, max: 170)
+
+            TableColumn("中文释义") { word in
+                Text(word.meaningChinese)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .width(min: 120, ideal: 150, max: 260)
+
+            if mode == .fullColumns {
+                TableColumn("JLPT") { word in
+                    Text(word.jlptLevel.isEmpty ? "-" : word.jlptLevel)
+                        .lineLimit(1)
                 }
-                viewModel.beginEditSelectedWord()
+                .width(min: 60, ideal: 70, max: 90)
+
+                TableColumn("词性") { word in
+                    Text(word.partOfSpeech.isEmpty ? "-" : word.partOfSpeech)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .width(min: 80, ideal: 110, max: 180)
             }
 
-            Button("重置学习进度") {
+            TableColumn("状态") { word in
+                Text(word.learningStateDisplayName)
+                    .lineLimit(1)
+            }
+            .width(min: 80, ideal: 100, max: 140)
+        }
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .contextMenu(forSelectionType: WordbookRowViewData.ID.self) { selection in
+            Button("编辑") {
                 if let id = selection.first {
-                    viewModel.selectedWordID = id
+                    viewModel.beginEditWord(id: id, context: modelContext)
                 }
-                viewModel.requestResetProgressForSelectedWord()
+            }
+
+            Button("重置学习记录") {
+                if let id = selection.first {
+                    viewModel.requestResetProgress(for: id, context: modelContext)
+                }
             }
 
             Divider()
 
             Button("删除", role: .destructive) {
                 if let id = selection.first {
-                    viewModel.selectedWordID = id
+                    viewModel.requestDeleteWord(id: id, context: modelContext)
                 }
-                viewModel.requestDeleteSelectedWord()
             }
         }
     }
 
-    private var selectedWordBinding: Binding<VocabularyWord.ID?> {
+    private var compactWordList: some View {
+        List(viewModel.filteredWords, selection: selectedWordBinding) { word in
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(word.expression)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                        if word.isFavorite {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(.yellow)
+                                .accessibilityLabel("已收藏")
+                        }
+                    }
+                    Text(word.reading)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(word.meaningChinese)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Text(word.learningStateDisplayName)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
+            }
+            .padding(.vertical, 4)
+            .tag(word.id)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var selectedWordBinding: Binding<UUID?> {
         Binding {
             viewModel.selectedWordID
         } set: { newSelection in
@@ -337,7 +494,9 @@ private extension View {
             Button("取消", role: .cancel, action: onCancel)
             Button("删除", role: .destructive, action: onConfirm)
         } message: {
-            Text("删除后会同时删除相关学习进度和复习记录，此操作不可撤销。")
+            if let target = word.wrappedValue {
+                Text("将删除“\(target.japanese)（\(target.kana)）”，并同时删除相关学习进度和复习记录。此操作不可撤销。")
+            }
         }
     }
 
@@ -347,7 +506,7 @@ private extension View {
         onConfirm: @escaping () -> Void
     ) -> some View {
         alert(
-            "确认重置学习进度？",
+            "确认重置学习记录？",
             isPresented: Binding(
                 get: { word.wrappedValue != nil },
                 set: { isPresented in
@@ -358,9 +517,9 @@ private extension View {
             )
         ) {
             Button("取消", role: .cancel, action: onCancel)
-            Button("重置", role: .destructive, action: onConfirm)
+            Button("重置学习记录", role: .destructive, action: onConfirm)
         } message: {
-            Text("该单词会回到新词状态，已有复习记录会被清空。")
+            Text("该单词会恢复为新词，并删除该词的复习历史。此操作不可撤销。")
         }
     }
 }

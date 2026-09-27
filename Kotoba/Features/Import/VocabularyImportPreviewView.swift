@@ -15,8 +15,10 @@ struct VocabularyImportPreviewView: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
 
             Picker("重复处理方式", selection: $duplicateHandling) {
                 ForEach(VocabularyDuplicateHandling.allCases) { handling in
@@ -38,6 +40,11 @@ struct VocabularyImportPreviewView: View {
                 errorsList
             }
 
+                }
+                .padding(24)
+            }
+
+            Divider()
             HStack {
                 Spacer()
 
@@ -48,9 +55,10 @@ struct VocabularyImportPreviewView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(isImporting || preview.validRows == 0)
             }
+            .padding(16)
+            .background(.bar)
         }
-        .padding(24)
-        .frame(minWidth: 560, idealWidth: 720, minHeight: 560)
+        .frame(minWidth: 440, idealWidth: 720, maxWidth: 820, minHeight: 360, idealHeight: 560, maxHeight: 720)
     }
 
     private var header: some View {

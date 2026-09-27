@@ -6,6 +6,7 @@
 //
 
 import XCTest
+@testable import Kotoba
 
 final class VocabularyCSVExportServiceTests: XCTestCase {
     func testExportEscapesCommasQuotesAndNewlines() {
@@ -28,5 +29,10 @@ final class VocabularyCSVExportServiceTests: XCTestCase {
         XCTAssertTrue(csv.contains("\"彼は「ご飯」を食べる\n水も飲む。\""))
         XCTAssertTrue(csv.contains("\"他说\"\"好\"\"。\""))
         XCTAssertTrue(csv.contains("生活;动作"))
+        XCTAssertEqual(try? CSVParser().parse(csv).headers.count, 8)
+        XCTAssertEqual(
+            try? CSVParser().parse(csv).headers,
+            ["expression", "reading", "meaningChinese", "partOfSpeech", "exampleJapanese", "exampleChinese", "jlptLevel", "tags"]
+        )
     }
 }

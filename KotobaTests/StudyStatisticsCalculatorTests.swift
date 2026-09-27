@@ -2,190 +2,119 @@
 //  StudyStatisticsCalculatorTests.swift
 //  KotobaTests
 //
-//  Created by Codex on 2026/6/16.
-//
 
+import SwiftData
 import XCTest
+@testable import Kotoba
 
 final class StudyStatisticsCalculatorTests: XCTestCase {
-    private let calculator = StudyStatisticsCalculator()
-
-    func testRecentActivityGroupsDatesUsingProvidedCalendarAndTimeZone() throws {
-        let calendar = try makeCalendar(timeZoneIdentifier: "Asia/Shanghai")
-        let wordID = UUID()
-        let input = StudyStatisticsInput(
-            logs: [
-                makeLog(
-                    wordID: wordID,
-                    reviewedAt: try makeDate(
-                        year: 2026,
-                        month: 6,
-                        day: 16,
-                        hour: 0,
-                        minute: 30,
-                        timeZoneIdentifier: "Asia/Shanghai"
-                    ),
-                    rating: .good,
-                    previousState: .new
-                ),
-                makeLog(
-                    wordID: wordID,
-                    reviewedAt: try makeDate(
-                        year: 2026,
-                        month: 6,
-                        day: 16,
-                        hour: 23,
-                        minute: 30,
-                        timeZoneIdentifier: "Asia/Shanghai"
-                    ),
-                    rating: .hard,
-                    previousState: .review
-                )
-            ],
-            words: [
-                makeWord(id: wordID, expression: "勉強", jlptLevel: "N5")
-            ]
+    @MainActor
+    func testServiceReadsCompleteCoreHistory() async throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let word = VocabularyWord(japanese: "確認", kana: "かくにん", chineseMeaning: "确认", jlptLevel: "N3")
+        let log = ReviewLog(
+            reviewedAt: Date(timeIntervalSinceReferenceDate: 1_000),
+            rating: .again,
+            previousState: .review,
+            nextState: .relearning,
+            previousIntervalDays: 5,
+            nextIntervalDays: 0,
+            scheduledDueAt: Date(timeIntervalSinceReferenceDate: 1_600),
+            word: word
         )
-        let now = try makeDate(
-            year: 2026,
-            month: 6,
-            day: 16,
-            hour: 23,
-            minute: 45,
-            timeZoneIdentifier: "Asia/Shanghai"
-        )
+        context.insert(word)
+        context.insert(log)
+        try context.save()
 
-        let statistics = calculator.calculate(input: input, calendar: calendar, now: now)
-        let activity = try XCTUnwrap(statistics.recentDailyActivity.last)
+        let input = try await StudyStatisticsService().makeInput(in: container)
 
-        XCTAssertTrue(calendar.isDate(activity.day, inSameDayAs: now))
-        XCTAssertEqual(activity.totalCount, 2)
-        XCTAssertEqual(activity.newWordCount, 1)
-        XCTAssertEqual(activity.reviewCount, 1)
-        XCTAssertEqual(statistics.todayNewWordCount, 1)
-        XCTAssertEqual(statistics.todayReviewCount, 1)
+        XCTAssertEqual(input.words, [.init(id: word.id, expression: "確認", reading: "かくにん", meaningChinese: "确认")])
+        XCTAssertEqual(input.logs.first?.id, log.id)
     }
 
-    func testCurrentStreakCountsConsecutiveDaysEndingTodayAndDeduplicatesLogs() throws {
-        let calendar = try makeCalendar(timeZoneIdentifier: "Asia/Shanghai")
-        let now = try makeDate(
-            year: 2026,
-            month: 1,
-            day: 10,
-            hour: 9,
-            minute: 0,
-            timeZoneIdentifier: "Asia/Shanghai"
-        )
-        let duplicateID = UUID()
+    func testCountsTodayAndRecentSevenDaysInProvidedTimeZone() throws {
+        let calendar = try makeCalendar()
+        let now = try makeDate(day: 10, calendar: calendar)
         let wordID = UUID()
         let input = StudyStatisticsInput(
             logs: [
-                makeLog(id: duplicateID, wordID: wordID, reviewedAt: now),
-                makeLog(id: duplicateID, wordID: wordID, reviewedAt: now),
-                makeLog(wordID: wordID, reviewedAt: try date(byAddingDays: -1, to: now, calendar: calendar)),
-                makeLog(wordID: wordID, reviewedAt: try date(byAddingDays: -2, to: now, calendar: calendar)),
-                makeLog(wordID: wordID, reviewedAt: try date(byAddingDays: -4, to: now, calendar: calendar))
+                makeLog(wordID: wordID, at: now, state: .new),
+                makeLog(wordID: wordID, at: now, state: .review),
+                makeLog(wordID: wordID, at: try addDays(-6, to: now, calendar: calendar), state: .review),
+                makeLog(wordID: wordID, at: try addDays(-7, to: now, calendar: calendar), state: .review)
             ],
-            words: [
-                makeWord(id: wordID, expression: "確認", jlptLevel: "N3")
-            ]
+            words: [makeWord(id: wordID)]
         )
 
-        let statistics = calculator.calculate(input: input, calendar: calendar, now: now)
+        let result = StudyStatisticsCalculator().calculate(input: input, calendar: calendar, now: now)
 
-        XCTAssertEqual(statistics.totalReviewCount, 4)
-        XCTAssertEqual(statistics.currentStreakDays, 3)
+        XCTAssertEqual(result.todayNewWordCount, 1)
+        XCTAssertEqual(result.todayReviewCount, 1)
+        XCTAssertEqual(result.totalLearnedWordCount, 1)
+        XCTAssertEqual(result.recentDailyActivity.count, 7)
+        XCTAssertEqual(result.recentDailyActivity.reduce(0) { $0 + $1.totalCount }, 3)
     }
 
-    func testCurrentStreakIsZeroWhenTodayHasNoActivity() throws {
-        let calendar = try makeCalendar(timeZoneIdentifier: "Asia/Shanghai")
-        let now = try makeDate(
-            year: 2026,
-            month: 1,
-            day: 10,
-            hour: 9,
-            minute: 0,
-            timeZoneIdentifier: "Asia/Shanghai"
-        )
+    func testStreakUsesHistoryBeyondThirtyDays() throws {
+        let calendar = try makeCalendar()
+        let now = try makeDate(day: 10, calendar: calendar)
         let wordID = UUID()
-        let input = StudyStatisticsInput(
-            logs: [
-                makeLog(wordID: wordID, reviewedAt: try date(byAddingDays: -1, to: now, calendar: calendar)),
-                makeLog(wordID: wordID, reviewedAt: try date(byAddingDays: -2, to: now, calendar: calendar))
-            ],
-            words: [
-                makeWord(id: wordID, expression: "復習", jlptLevel: "N4")
-            ]
+        let logs = try (0..<45).map { offset in
+            makeLog(wordID: wordID, at: try addDays(-offset, to: now, calendar: calendar), state: .review)
+        }
+
+        let result = StudyStatisticsCalculator().calculate(
+            input: .init(logs: logs, words: [makeWord(id: wordID)]),
+            calendar: calendar,
+            now: now
         )
 
-        let statistics = calculator.calculate(input: input, calendar: calendar, now: now)
+        XCTAssertEqual(result.currentStreakDays, 45)
+    }
 
-        XCTAssertEqual(statistics.currentStreakDays, 0)
+    func testHardestWordsAreLimitedToTen() throws {
+        let calendar = try makeCalendar()
+        let now = try makeDate(day: 10, calendar: calendar)
+        let words = (0..<12).map { makeWord(id: UUID(), expression: "词\($0)") }
+        let logs = words.enumerated().flatMap { index, word in
+            (0...index).map { _ in makeLog(wordID: word.id, at: now, state: .review, rating: .again) }
+        }
+
+        let result = StudyStatisticsCalculator().calculate(
+            input: .init(logs: logs, words: words),
+            calendar: calendar,
+            now: now
+        )
+
+        XCTAssertEqual(result.topLapsedWords.count, 10)
+        XCTAssertEqual(result.topLapsedWords.first?.lapseCount, 12)
     }
 
     private func makeLog(
-        id: UUID = UUID(),
-        wordID: UUID?,
-        reviewedAt: Date,
-        rating: ReviewRating = .good,
-        previousState: LearningState = .review,
-        nextState: LearningState = .review
+        wordID: UUID,
+        at date: Date,
+        state: LearningState,
+        rating: ReviewRating = .good
     ) -> StudyLogSnapshot {
-        StudyLogSnapshot(
-            id: id,
-            wordID: wordID,
-            reviewedAt: reviewedAt,
-            rating: rating,
-            previousState: previousState,
-            nextState: nextState
-        )
+        StudyLogSnapshot(id: UUID(), wordID: wordID, reviewedAt: date, rating: rating, previousState: state)
     }
 
-    private func makeWord(
-        id: UUID,
-        expression: String,
-        jlptLevel: String
-    ) -> StudyWordSnapshot {
-        StudyWordSnapshot(
-            id: id,
-            expression: expression,
-            reading: "",
-            meaningChinese: "",
-            jlptLevel: jlptLevel,
-            isArchived: false
-        )
+    private func makeWord(id: UUID, expression: String = "确认") -> StudyWordSnapshot {
+        StudyWordSnapshot(id: id, expression: expression, reading: "かくにん", meaningChinese: "确认")
     }
 
-    private func makeCalendar(timeZoneIdentifier: String) throws -> Calendar {
-        let timeZone = try XCTUnwrap(TimeZone(identifier: timeZoneIdentifier))
+    private func makeCalendar() throws -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         return calendar
     }
 
-    private func makeDate(
-        year: Int,
-        month: Int,
-        day: Int,
-        hour: Int,
-        minute: Int,
-        timeZoneIdentifier: String
-    ) throws -> Date {
-        let timeZone = try XCTUnwrap(TimeZone(identifier: timeZoneIdentifier))
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-
-        return try XCTUnwrap(calendar.date(from: DateComponents(
-            timeZone: timeZone,
-            year: year,
-            month: month,
-            day: day,
-            hour: hour,
-            minute: minute
-        )))
+    private func makeDate(day: Int, calendar: Calendar) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: day, hour: 10)))
     }
 
-    private func date(byAddingDays days: Int, to date: Date, calendar: Calendar) throws -> Date {
+    private func addDays(_ days: Int, to date: Date, calendar: Calendar) throws -> Date {
         try XCTUnwrap(calendar.date(byAdding: .day, value: days, to: date))
     }
 }

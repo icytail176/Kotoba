@@ -9,33 +9,60 @@ import Combine
 import Foundation
 import SwiftData
 
+enum KotobaBackupExportKind {
+    case full
+
+    var successMessage: String {
+        switch self {
+        case .full:
+            return "全部数据备份已导出。"
+        }
+    }
+
+    var fileNamePrefix: String {
+        switch self {
+        case .full:
+            return "Kotoba_Backup"
+        }
+    }
+}
+
 @MainActor
 final class SettingsViewModel: ObservableObject {
-    static let clearAllDataConfirmationPhrase = "清空全部数据"
-
     @Published var exportDocument: VocabularyCSVDocument?
+    @Published var backupDocument: KotobaBackupDocument?
     @Published var isExporterPresented = false
+    @Published var isBackupExporterPresented = false
+    @Published var isBackupImporterPresented = false
+    @Published var isBackupImportConfirmationPresented = false
+    @Published var backupImportStrategy: KotobaBackupImportStrategy = .merge
+    @Published private(set) var isImportingBackup = false
+    @Published private(set) var backupImportStatus: String?
+    @Published private(set) var backupExportKind: KotobaBackupExportKind = .full
     @Published var errorMessage: String?
     @Published var successMessage: String?
-    @Published var isFirstClearConfirmationPresented = false
-    @Published var isFinalClearConfirmationPresented = false
-    @Published var clearConfirmationText = ""
-    @Published var isTestingLMStudio = false
-    @Published var lmStudioStatusMessage: String?
 
     private let exportService: VocabularyCSVExportService
-    private let dataManagementService: DataManagementService
+    private let backupService: KotobaBackupService
+    private var backupImporter: (any KotobaBackupImporting)?
+    private var pendingBackupImportData: Data?
+    private var backupExportTask: Task<Void, Never>?
+    private var backupImportTask: Task<Void, Never>?
 
     init(
         exportService: VocabularyCSVExportService? = nil,
-        dataManagementService: DataManagementService? = nil
+        backupService: KotobaBackupService? = nil,
+        backupImporter: (any KotobaBackupImporting)? = nil
     ) {
         self.exportService = exportService ?? VocabularyCSVExportService()
-        self.dataManagementService = dataManagementService ?? DataManagementService()
+        self.backupService = backupService ?? KotobaBackupService()
+        self.backupImporter = backupImporter
     }
 
-    var canClearAllData: Bool {
-        clearConfirmationText == Self.clearAllDataConfirmationPhrase
+    var defaultBackupFileName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "\(backupExportKind.fileNamePrefix)_\(formatter.string(from: Date())).json"
     }
 
     func prepareExport(context: ModelContext) {
@@ -58,69 +85,113 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
-    func requestClearAllData() {
-        clearConfirmationText = ""
-        isFirstClearConfirmationPresented = true
+    func prepareFullBackupExport(context: ModelContext) {
+        backupExportTask?.cancel()
+        do {
+            let snapshot = try backupService.makeBackup(in: context)
+            backupExportTask = Task { [weak self, snapshot] in
+                do {
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try KotobaBackupService.encodeBackupSnapshot(snapshot)
+                    }.value
+                    guard !Task.isCancelled else { return }
+                    self?.backupDocument = KotobaBackupDocument(data: data)
+                    self?.backupExportKind = .full
+                    self?.isBackupExporterPresented = true
+                    self?.errorMessage = nil
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.errorMessage = "备份导出失败：\(error.localizedDescription)"
+                }
+            }
+        } catch {
+            errorMessage = "备份导出失败：\(error.localizedDescription)"
+        }
     }
 
-    func continueToFinalClearConfirmation() {
-        clearConfirmationText = ""
-        isFinalClearConfirmationPresented = true
+    func handleBackupExportCompletion(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            successMessage = backupExportKind.successMessage
+        case .failure(let error):
+            errorMessage = "备份导出失败：\(error.localizedDescription)"
+        }
     }
 
-    func cancelFinalClearConfirmation() {
-        clearConfirmationText = ""
-        isFinalClearConfirmationPresented = false
-    }
-
-    func clearAllData(context: ModelContext) {
-        guard canClearAllData else {
-            return
+    func prepareBackupImport(from url: URL) {
+        guard !isImportingBackup else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
 
         do {
-            try dataManagementService.clearAllData(in: context)
-            clearConfirmationText = ""
-            isFinalClearConfirmationPresented = false
-            successMessage = "全部本地学习数据已清空。"
+            let data = try Data(contentsOf: url)
+            try stageBackupImport(data: data)
         } catch {
-            errorMessage = "清空数据失败：\(error.localizedDescription)"
+            pendingBackupImportData = nil
+            errorMessage = "备份文件无效：\(error.localizedDescription)"
         }
     }
 
-    func testLMStudioConnection(
-        baseURLString: String,
-        modelName: String,
-        timeout: Double
-    ) {
-        guard !isTestingLMStudio else {
+    func stageBackupImport(data: Data) throws {
+        guard !isImportingBackup else {
+            throw KotobaBackupImportError.alreadyInProgress
+        }
+
+        _ = try backupService.decodeBackup(from: data)
+        pendingBackupImportData = data
+        backupImportStrategy = .merge
+        isBackupImportConfirmationPresented = true
+        errorMessage = nil
+    }
+
+    func cancelBackupImport() {
+        guard !isImportingBackup else { return }
+        pendingBackupImportData = nil
+        isBackupImportConfirmationPresented = false
+    }
+
+    func confirmBackupImport(context: ModelContext) {
+        guard !isImportingBackup, let pendingBackupImportData else {
             return
         }
 
-        guard let baseURL = URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            errorMessage = "LM Studio URL 格式无效。"
-            return
-        }
+        let importer = backupImporter ?? KotobaBackupImportCoordinator(modelContainer: context.container)
+        backupImporter = importer
+        let strategy = backupImportStrategy
 
-        isTestingLMStudio = true
-        lmStudioStatusMessage = nil
+        isImportingBackup = true
+        backupImportStatus = "正在导入备份…"
+        errorMessage = nil
+        successMessage = nil
 
-        Task {
+        backupImportTask = Task { [weak self, importer, pendingBackupImportData, strategy, context] in
             do {
-                let provider = LMStudioConjugationProvider(
-                    baseURL: baseURL,
-                    modelName: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    timeout: AppSettings.clampedLMStudioTimeout(timeout)
+                let result = try await importer.importBackup(
+                from: pendingBackupImportData,
+                    strategy: strategy
                 )
-                let status = try await provider.testConnection()
-                lmStudioStatusMessage = status.message
-                successMessage = status.message
+
+                // SwiftData publishes saves from the sibling context. Processing
+                // pending changes here ensures observation is delivered before
+                // the success state is shown and subsequent screens re-fetch.
+                context.processPendingChanges()
+                StudyStatisticsService.invalidateCache()
+
+                self?.pendingBackupImportData = nil
+                self?.isBackupImportConfirmationPresented = false
+                self?.successMessage = "备份导入完成：新增词书 \(result.insertedWordBookCount)，新增词条 \(result.insertedWordCount)，新增复习记录 \(result.insertedReviewLogCount)。"
             } catch {
-                lmStudioStatusMessage = "连接失败：\(error.localizedDescription)"
-                errorMessage = lmStudioStatusMessage
+                self?.errorMessage = "备份导入失败：\(error.localizedDescription)"
             }
 
-            isTestingLMStudio = false
+            self?.isImportingBackup = false
+            self?.backupImportStatus = nil
+            self?.backupImportTask = nil
         }
     }
+
 }

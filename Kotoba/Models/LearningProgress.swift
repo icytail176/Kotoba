@@ -53,4 +53,31 @@ final class LearningProgress {
         self.updatedAt = updatedAt
         self.word = word
     }
+
+}
+
+enum StudyDuePolicy {
+    nonisolated static func isDue(
+        state: LearningState,
+        dueAt: Date,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        switch state {
+        case .learning, .relearning:
+            return dueAt <= now
+        case .review:
+            return calendar.startOfDay(for: dueAt) <= calendar.startOfDay(for: now)
+        case .new, .suspended:
+            return false
+        }
+    }
+
+    static func isDue(
+        progress: LearningProgress,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        isDue(state: progress.state, dueAt: progress.dueAt, now: now, calendar: calendar)
+    }
 }

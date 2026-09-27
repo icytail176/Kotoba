@@ -21,9 +21,26 @@
 		B3F9A1612FE170000055E8F7 /* KotobaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KotobaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B3F9A1712FE170000055E8F7 /* Exceptions for "Kotoba" folder in "Kotoba" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/original_backup/eggrolls_kotoba_N1_strict.original.csv,
+				Resources/original_backup/eggrolls_kotoba_N2_strict.original.csv,
+				Resources/original_backup/eggrolls_kotoba_N3_strict.original.csv,
+				Resources/original_backup/eggrolls_kotoba_N4_strict.original.csv,
+				Resources/original_backup/eggrolls_kotoba_N5_strict.original.csv,
+			);
+			target = B3F9A1452FE14BD90055E8F7 /* Kotoba */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B3F9A1482FE14BD90055E8F7 /* Kotoba */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B3F9A1712FE170000055E8F7 /* Exceptions for "Kotoba" folder in "Kotoba" target */,
+			);
 			path = Kotoba;
 			sourceTree = "<group>";
 		};
@@ -146,12 +163,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				B3F9A1632FE170000055E8F7 /* KotobaTests */,
-				B3F9A16B2FE170000055E8F7 /* Kotoba/Models */,
-				B3F9A16C2FE170000055E8F7 /* Kotoba/PreviewSupport */,
-				B3F9A16D2FE170000055E8F7 /* Kotoba/Services */,
-				B3F9A16E2FE170000055E8F7 /* Kotoba/Features/Study */,
-				B3F9A16F2FE170000055E8F7 /* Kotoba/Components */,
-				B3F9A1702FE170000055E8F7 /* Kotoba/Features/Import */,
 			);
 			name = KotobaTests;
 			packageProductDependencies = (
@@ -368,17 +379,19 @@
 				CODE_SIGN_ENTITLEMENTS = Kotoba/Kotoba.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Kotoba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.Kotoba;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -399,17 +412,19 @@
 				CODE_SIGN_ENTITLEMENTS = Kotoba/Kotoba.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Kotoba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.Kotoba;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -426,6 +441,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -438,6 +454,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.KotobaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kotoba.app/Contents/MacOS/Kotoba";
 			};
 			name = Debug;
 		};
@@ -445,6 +462,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -457,6 +475,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.fumi.KotobaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kotoba.app/Contents/MacOS/Kotoba";
 			};
 			name = Release;
 		};

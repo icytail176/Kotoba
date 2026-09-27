@@ -1,0 +1,8 @@
+Kotoba includes a small derived set of loanword-source metadata from JMdict.
+
+JMdict is provided by the Electronic Dictionary Research and Development Group
+and is distributed under the Creative Commons Attribution-ShareAlike 4.0
+International licence.
+
+Project: https://www.edrdg.org/jmdict/j_jmdict.html
+Licence: https://www.edrdg.org/edrdg/licence.html

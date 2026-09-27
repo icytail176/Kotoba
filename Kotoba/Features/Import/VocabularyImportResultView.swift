@@ -5,12 +5,11 @@
 //  Created by Codex on 2026/6/16.
 //
 
-import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct VocabularyImportResultView: View {
-    @Environment(\.modelContext) private var modelContext
-    @State private var conjugationStats: ConjugationStats?
+    @State private var isReportExporterPresented = false
     let result: VocabularyImportResult
     let onDone: () -> Void
 
@@ -43,23 +42,8 @@ struct VocabularyImportResultView: View {
                 }
             }
 
-            if let conjugationStats {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("活用数据")
-                        .font(.headline)
-
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                        GridRow {
-                            ResultCell(title: "可能需要", value: conjugationStats.possibleCount)
-                            ResultCell(title: "本地已处理", value: conjugationStats.localRuleCount)
-                        }
-
-                        GridRow {
-                            ResultCell(title: "待补全", value: conjugationStats.pendingCount)
-                            ResultCell(title: "需要检查", value: conjugationStats.needsReviewCount)
-                        }
-                    }
-                }
+            if let qualityReport = result.qualityReport {
+                qualityReportSection(qualityReport)
             }
 
             HStack {
@@ -71,28 +55,109 @@ struct VocabularyImportResultView: View {
         }
         .padding(24)
         .frame(minWidth: 420)
-        .task(id: result.wordBookID) {
-            loadConjugationStats()
+        .fileExporter(
+            isPresented: $isReportExporterPresented,
+            document: ImportQualityReportDocument(text: result.qualityReport?.makeCSVReport() ?? ""),
+            contentType: .commaSeparatedText,
+            defaultFilename: "kotoba_import_quality_report.csv"
+        ) { _ in }
+    }
+
+    private func qualityReportSection(_ report: VocabularyImportQualityReport) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("导入质量报告")
+                .font(.headline)
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                GridRow {
+                    ResultCell(title: "严重错误", value: report.criticalCount)
+                    ResultCell(title: "警告", value: report.warningCount)
+                }
+
+                GridRow {
+                    ResultCell(title: "提示", value: report.infoCount)
+                    ResultCell(title: "检查总数", value: report.issues.count)
+                }
+            }
+
+            DisclosureGroup("查看质量报告") {
+                qualityIssueList(report)
+                    .padding(.top, 8)
+            }
+
+            Button {
+                isReportExporterPresented = true
+            } label: {
+                Label("导出问题报告", systemImage: "square.and.arrow.up")
+            }
+            .disabled(!report.hasIssues)
         }
     }
 
-    private func loadConjugationStats() {
-        guard let wordBookID = result.wordBookID else {
-            conjugationStats = nil
+    private func qualityIssueList(_ report: VocabularyImportQualityReport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if report.issues.isEmpty {
+                Text("未发现质量问题。")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(report.issues.prefix(80)) { issue in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(issueTitle(issue))
+                            .font(.callout.weight(.semibold))
+                        Text(issue.reason)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 4)
+                    Divider()
+                }
+
+                if report.issues.count > 80 {
+                    Text("仅显示前 80 条，完整内容可导出问题报告。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxHeight: 260)
+    }
+
+    private func issueTitle(_ issue: VocabularyImportQualityIssue) -> String {
+        let line = issue.lineNumber.map { "第 \($0) 行" } ?? "全局"
+        let expression = issue.expression.isEmpty ? "" : " · \(issue.expression)"
+        return "\(issue.severity.title)：\(line)\(expression)"
+    }
+
+}
+
+private struct ImportQualityReportDocument: FileDocument {
+    static var readableContentTypes: [UTType] {
+        [.commaSeparatedText]
+    }
+
+    static var writableContentTypes: [UTType] {
+        [.commaSeparatedText]
+    }
+
+    let text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents,
+              let text = String(data: data, encoding: .utf8) else {
+            self.text = ""
             return
         }
 
-        do {
-            let books = try modelContext.fetch(FetchDescriptor<WordBook>())
-            guard let wordBook = books.first(where: { $0.id == wordBookID }) else {
-                conjugationStats = nil
-                return
-            }
+        self.text = text
+    }
 
-            conjugationStats = try ConjugationStatsService().stats(for: wordBook, in: modelContext)
-        } catch {
-            conjugationStats = nil
-        }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
 

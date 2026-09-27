@@ -39,6 +39,6 @@ struct VocabularyCSVDocument: FileDocument {
     }
 
     private static var csvContentType: UTType {
-        UTType(filenameExtension: "csv") ?? .plainText
+        .commaSeparatedText
     }
 }

@@ -20,7 +20,7 @@ struct HomeDashboardSnapshot: Equatable {
     let wordBookName: String
     let wordBookDescription: String
     let totalWordCount: Int
-    let availableNewWordCount: Int
+    let remainingNewWordCount: Int
     let dueReviewCount: Int
     let masteredWordCount: Int
     let hasWordBooks: Bool
@@ -29,71 +29,65 @@ struct HomeDashboardSnapshot: Equatable {
 
 @MainActor
 struct HomeDashboardService {
-    private let calendar: Calendar
-
-    init(calendar: Calendar = .current) {
-        self.calendar = calendar
-    }
-
     func makeSnapshot(
         in context: ModelContext,
         selectedIDString: String?,
-        dailyNewWordLimit: Int,
         now: Date = Date()
-    ) throws -> (snapshot: HomeDashboardSnapshot, resolvedWordBook: WordBook?) {
-        let wordBookService = WordBookService()
-        let books = try wordBookService.fetchWordBooks(in: context)
-        guard let selectedBook = try wordBookService.resolveSelectedWordBook(
-            in: context,
-            selectedIDString: selectedIDString
-        ) else {
-            return (
-                HomeDashboardSnapshot(
-                    wordBookID: nil,
-                    wordBookName: "",
-                    wordBookDescription: "",
-                    totalWordCount: 0,
-                    availableNewWordCount: 0,
-                    dueReviewCount: 0,
-                    masteredWordCount: 0,
-                    hasWordBooks: !books.isEmpty,
-                    example: nil
-                ),
-                nil
-            )
-        }
-
-        let words = selectedBook.words.filter { !$0.isArchived }
-        let introducedToday = countNewWordsIntroducedToday(from: words, now: now)
-        let availableNewWordCount = min(
-            max(0, dailyNewWordLimit - introducedToday),
-            words.filter { $0.progress?.state == .new }.count
-        )
-        let dueReviewCount = words.filter { word in
-            guard let progress = word.progress else {
-                return false
+    ) throws -> (snapshot: HomeDashboardSnapshot, resolvedWordBook: WordBook?, wordBooks: [WordBook]) {
+        try PerformanceTrace.measure("Home dashboard load") {
+            let wordBookService = WordBookService()
+            let books = try wordBookService.fetchWordBooks(in: context)
+            let selectedID = selectedIDString.flatMap(UUID.init(uuidString:))
+            guard let selectedBook = books.first(where: { $0.id == selectedID }) ?? books.first else {
+                return (
+                    HomeDashboardSnapshot(
+                        wordBookID: nil,
+                        wordBookName: "",
+                        wordBookDescription: "",
+                        totalWordCount: 0,
+                        remainingNewWordCount: 0,
+                        dueReviewCount: 0,
+                        masteredWordCount: 0,
+                        hasWordBooks: !books.isEmpty,
+                        example: nil
+                    ),
+                    nil,
+                    books
+                )
             }
 
-            return progress.state != .new
-                && progress.state != .suspended
-                && progress.dueAt <= now
-        }.count
-        let masteredWordCount = words.filter { $0.progress?.state == .review }.count
+            let selectedBookID = selectedBook.id
+            var descriptor = FetchDescriptor<VocabularyWord>(predicate: #Predicate { word in
+                word.wordBook?.id == selectedBookID && !word.isArchived
+            })
+            descriptor.includePendingChanges = true
+            let words = try context.fetch(descriptor)
+            let remainingNewWordCount = words.filter { $0.progress?.state == .new }.count
+            let dueReviewCount = words.filter { word in
+                guard let progress = word.progress else {
+                    return false
+                }
 
-        return (
-            HomeDashboardSnapshot(
-                wordBookID: selectedBook.id,
-                wordBookName: selectedBook.name,
-                wordBookDescription: selectedBook.bookDescription,
-                totalWordCount: words.count,
-                availableNewWordCount: availableNewWordCount,
-                dueReviewCount: dueReviewCount,
-                masteredWordCount: masteredWordCount,
-                hasWordBooks: true,
-                example: randomExample(from: words)
-            ),
-            selectedBook
-        )
+                return StudyDuePolicy.isDue(progress: progress, now: now)
+            }.count
+            let masteredWordCount = words.filter { $0.progress?.state == .review }.count
+
+            return (
+                HomeDashboardSnapshot(
+                    wordBookID: selectedBook.id,
+                    wordBookName: selectedBook.name,
+                    wordBookDescription: selectedBook.bookDescription,
+                    totalWordCount: words.count,
+                    remainingNewWordCount: remainingNewWordCount,
+                    dueReviewCount: dueReviewCount,
+                    masteredWordCount: masteredWordCount,
+                    hasWordBooks: true,
+                    example: randomExample(from: words)
+                ),
+                selectedBook,
+                books
+            )
+        }
     }
 
     func randomExample(from words: [VocabularyWord]) -> HomeExample? {
@@ -118,21 +112,4 @@ struct HomeDashboardService {
         )
     }
 
-    private func countNewWordsIntroducedToday(from words: [VocabularyWord], now: Date) -> Int {
-        var introducedWordIDs = Set<UUID>()
-
-        for word in words {
-            guard !introducedWordIDs.contains(word.id) else {
-                continue
-            }
-
-            if word.reviewLogs.contains(where: { log in
-                log.previousState == .new && calendar.isDate(log.reviewedAt, inSameDayAs: now)
-            }) {
-                introducedWordIDs.insert(word.id)
-            }
-        }
-
-        return introducedWordIDs.count
-    }
 }

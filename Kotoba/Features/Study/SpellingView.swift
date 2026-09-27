@@ -1,42 +1,26 @@
-//
-//  SpellingView.swift
-//  Kotoba
-//
-//  Created by Codex on 2026/6/17.
-//
-
+import AppKit
 import SwiftUI
 
 struct SpellingView: View {
     @StateObject private var viewModel: SpellingSessionViewModel
-    @FocusState private var isInputFocused: Bool
-    let autoSpeakAnswer: Bool
-    let speechState: SpeechPlaybackState
-    let onSpeakAnswer: (String) -> Void
-    let onSpeakExample: (String) -> Void
-    let onStopSpeech: () -> Void
+    @State private var isInputFocused = false
+    @State private var inputHint: String?
+    let onPhaseChanged: (SpellingSessionViewModel.Phase) -> Void
     let onComplete: (SpellingSessionViewModel.Summary) -> Void
 
     init(
-        words: [VocabularyWord],
-        conjugationRecords: [ConjugationRecord] = [],
-        autoSpeakAnswer: Bool,
-        speechState: SpeechPlaybackState,
-        onSpeakAnswer: @escaping (String) -> Void,
-        onSpeakExample: @escaping (String) -> Void,
-        onStopSpeech: @escaping () -> Void,
+        expressionQuestions: [SpellingQuestion],
+        readingQuestions: [SpellingQuestion],
+        onPhaseChanged: @escaping (SpellingSessionViewModel.Phase) -> Void = { _ in },
         onComplete: @escaping (SpellingSessionViewModel.Summary) -> Void
     ) {
-        let questions = SpellingQuestionGenerator().generate(
-            words: words,
-            conjugationRecords: conjugationRecords
+        _viewModel = StateObject(
+            wrappedValue: SpellingSessionViewModel(
+                expressionQuestions: expressionQuestions,
+                readingQuestions: readingQuestions
+            )
         )
-        _viewModel = StateObject(wrappedValue: SpellingSessionViewModel(questions: questions))
-        self.autoSpeakAnswer = autoSpeakAnswer
-        self.speechState = speechState
-        self.onSpeakAnswer = onSpeakAnswer
-        self.onSpeakExample = onSpeakExample
-        self.onStopSpeech = onStopSpeech
+        self.onPhaseChanged = onPhaseChanged
         self.onComplete = onComplete
     }
 
@@ -45,53 +29,52 @@ struct SpellingView: View {
             if let question = viewModel.currentQuestion {
                 questionContent(question)
             } else {
-                EmptyStateView(
-                    systemImage: "square.and.pencil",
-                    title: "拼写巩固已完成",
-                    message: "本组没有可生成的拼写题。"
-                )
+                EmptyStateView(systemImage: "square.and.pencil", title: "拼写巩固已完成", message: "本组没有可生成的拼写题。")
             }
         }
+        .background {
+            SpellingHintKeyboardMonitor(phase: viewModel.phase) {
+                viewModel.revealHint()
+            }
+            .frame(width: 0, height: 0)
+        }
+        .task { onPhaseChanged(viewModel.phase) }
+        .onChange(of: viewModel.phase) { _, phase in onPhaseChanged(phase) }
         .onChange(of: viewModel.summary) {
-            if let summary = viewModel.summary {
-                onComplete(summary)
-            }
+            if let summary = viewModel.summary { onComplete(summary) }
         }
+        .onDisappear { isInputFocused = false }
     }
 
     private func questionContent(_ question: SpellingQuestion) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                header(question)
+                header
                 promptCard(question)
                 answerInput(question)
                 feedbackView(question)
-                actionButtons(question)
+                submitOrNextButton
             }
             .padding(24)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
         }
-        .task {
-            isInputFocused = true
-        }
+        .task { focusInput() }
+        .onChange(of: question.id) { focusInput() }
     }
 
-    private func header(_ question: SpellingQuestion) -> some View {
+    private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.phase == .expression ? "第一轮 · 单词拼写" : "第二轮 · 假名拼写")
+                    .font(.title3.weight(.semibold))
                 Text(viewModel.progressText)
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
-
-                Text(question.formType?.title ?? question.direction.title)
-                    .font(.title3.weight(.semibold))
             }
-
             Spacer()
-
-            if viewModel.isRetryRound {
-                Text("错题")
+            if viewModel.isRetryAppearance {
+                Text("重练")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -100,47 +83,81 @@ struct SpellingView: View {
         }
     }
 
+    @ViewBuilder
     private func promptCard(_ question: SpellingQuestion) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(promptTitle(for: question))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text(question.prompt)
-                .font(.system(size: 38, weight: .semibold))
-                .minimumScaleFactor(0.6)
-                .lineLimit(3)
-                .textSelection(.enabled)
-
-            if !question.referenceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(question.referenceText)
+            if viewModel.phase == .expression {
+                Text("根据释义和语境写出完整日语单词")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                Text(question.meaningChinese)
+                    .font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
+                if question.hasExampleContext {
+                    Divider()
+                    Text(question.contextText)
+                        .font(.title3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !question.exampleChinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(question.exampleChinese)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                hintControl(question)
+            } else {
+                Text("看汉字词写假名")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(question.wordExpression)
+                    .font(.system(size: 36, weight: .semibold))
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+                if !question.meaningChinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(question.meaningChinese)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.separator, lineWidth: 1)
+        .overlay { RoundedRectangle(cornerRadius: 8).stroke(.separator, lineWidth: 1) }
+    }
+
+    @ViewBuilder
+    private func hintControl(_ question: SpellingQuestion) -> some View {
+        Divider()
+        if viewModel.isHintVisible {
+            LabeledContent("假名提示") {
+                Text(question.wordReading).textSelection(.enabled)
+            }
+        } else {
+            Button {
+                _ = viewModel.revealHint()
+            } label: {
+                Label("提示  ⌘⇧H", systemImage: "lightbulb")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!viewModel.canRevealHint)
+            .help("显示假名；使用提示后，本词会在本轮稍后重新测试")
         }
     }
 
     private func answerInput(_ question: SpellingQuestion) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("答案")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            TextField(answerPlaceholder(for: question), text: $viewModel.answer)
-                .textFieldStyle(.roundedBorder)
-                .font(.title3)
-                .focused($isInputFocused)
-                .disabled(viewModel.isAnswerLocked)
-                .onSubmit {
-                    submitCurrentAnswer()
-                }
+            Text("答案").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            IMEAwareTextField(
+                text: $viewModel.answer,
+                isFocused: $isInputFocused,
+                placeholder: question.direction == .expressionToReading ? "输入假名" : "输入日语单词",
+                isEnabled: !viewModel.isAnswerLocked,
+                onSubmit: { performPrimaryAction(isMarkedTextActive: $0) }
+            )
+            .frame(height: 30)
+            if let inputHint { Text(inputHint).font(.caption).foregroundStyle(.orange) }
         }
     }
 
@@ -149,31 +166,22 @@ struct SpellingView: View {
         if let feedback = viewModel.feedback {
             VStack(alignment: .leading, spacing: 10) {
                 Label(
-                    feedback == .correct ? "正确" : "需要重练",
+                    feedback == .correct ? "正确" : "拼写错误，请重新输入",
                     systemImage: feedback == .correct ? "checkmark.circle.fill" : "xmark.circle.fill"
                 )
                 .foregroundStyle(feedback == .correct ? .green : .red)
                 .font(.headline)
-
-                LabeledContent("正确答案") {
-                    Text(question.expectedAnswer)
-                        .textSelection(.enabled)
+                LabeledContent("你的答案") { Text(viewModel.answer).textSelection(.enabled) }
+                if feedback == .incorrect {
+                    LabeledContent("正确答案") { Text(question.expectedAnswer).textSelection(.enabled) }
+                    Text(question.direction == .expressionToReading ? "请重新输入这个词的假名。" : "请重新输入词条中的完整词典形。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
-
-                LabeledContent("假名") {
-                    Text(question.direction == .expressionToReading ? question.expectedAnswer : question.wordReading)
-                        .textSelection(.enabled)
-                }
-
-                LabeledContent("词典形") {
-                    Text("\(question.wordExpression)（\(question.wordReading)）")
-                        .textSelection(.enabled)
-                }
-
-                if let formType = question.formType {
-                    LabeledContent("活用形式") {
-                        Text(formType.title)
-                    }
+                if feedback == .correct && viewModel.currentCorrectAnswerWasRequeued {
+                    Text("本次已纠正；该词已加入本轮队尾，稍后将再次测试。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(16)
@@ -182,102 +190,119 @@ struct SpellingView: View {
         }
     }
 
-    private func actionButtons(_ question: SpellingQuestion) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                submitOrNextButton
-                speechButtons(question)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                submitOrNextButton
-                speechButtons(question)
-            }
-        }
-    }
-
     private var submitOrNextButton: some View {
-        Button {
-            if viewModel.isAnswerLocked {
-                viewModel.advance()
-                isInputFocused = true
-            } else {
-                submitCurrentAnswer()
-            }
-        } label: {
-            Label(viewModel.isAnswerLocked ? "下一题" : "提交答案", systemImage: viewModel.isAnswerLocked ? "arrow.right" : "checkmark")
+        Button { performPrimaryAction(isMarkedTextActive: false) } label: {
+            Label(viewModel.primaryActionTitle, systemImage: viewModel.isAnswerLocked ? "arrow.right" : "checkmark")
         }
         .buttonStyle(.borderedProminent)
+        .keyboardShortcutIf(viewModel.isAnswerLocked, .return, modifiers: [])
         .disabled(!viewModel.isAnswerLocked && !viewModel.canSubmit)
     }
 
-    private func speechButtons(_ question: SpellingQuestion) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                onSpeakAnswer(question.expectedAnswer)
-            } label: {
-                Label(speechState.isSpeaking ? "重新朗读" : "朗读答案", systemImage: "speaker.wave.2")
+    private func performPrimaryAction(isMarkedTextActive: Bool) {
+        switch viewModel.questionState {
+        case .answering:
+            guard !isMarkedTextActive else { return }
+            guard viewModel.canSubmit else {
+                if viewModel.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { inputHint = "请输入答案" }
+                return
             }
-            .keyboardShortcutIf(!isInputFocused && viewModel.isAnswerLocked, "r", modifiers: [])
-            .disabled(!viewModel.isAnswerLocked)
-
-            Button {
-                onSpeakExample(question.exampleJapanese)
-            } label: {
-                Label("朗读例句", systemImage: "text.bubble")
-            }
-            .keyboardShortcutIf(!isInputFocused && viewModel.isAnswerLocked, "e", modifiers: [])
-            .disabled(!viewModel.isAnswerLocked || question.exampleJapanese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button {
-                onStopSpeech()
-            } label: {
-                Label("停止朗读", systemImage: "stop.circle")
-            }
-            .keyboardShortcutIf(!isInputFocused, "s", modifiers: [])
-            .disabled(!speechState.isSpeaking)
-        }
-        .buttonStyle(.bordered)
-    }
-
-    private func submitCurrentAnswer() {
-        guard let question = viewModel.currentQuestion,
-              viewModel.submitAnswer() else {
-            return
-        }
-
-        isInputFocused = false
-        if autoSpeakAnswer {
-            onSpeakAnswer(question.expectedAnswer)
+            guard viewModel.handleEnter() == .submitted else { return }
+            inputHint = nil
+            viewModel.isAnswerLocked ? (isInputFocused = false) : focusInput()
+        case .submitted:
+            _ = viewModel.handleEnter()
+            inputHint = nil
+            viewModel.currentQuestion == nil ? (isInputFocused = false) : focusInput()
         }
     }
 
-    private func promptTitle(for question: SpellingQuestion) -> String {
-        switch question.direction {
-        case .meaningToExpression:
-            return "根据中文写日语"
-        case .readingToExpression:
-            return question.formType == nil ? "根据假名写单词" : "根据活用读音写形式"
-        case .expressionToReading:
-            return question.formType == nil ? "根据单词写假名" : "根据活用形式写读音"
-        }
+    private func focusInput() {
+        guard !viewModel.isAnswerLocked else { isInputFocused = false; return }
+        DispatchQueue.main.async { isInputFocused = true }
+    }
+}
+
+enum SpellingHintShortcutPolicy {
+    static func shouldHandle(
+        phase: SpellingSessionViewModel.Phase,
+        isRepeat: Bool,
+        modifiers: NSEvent.ModifierFlags,
+        keyCode: UInt16,
+        characters: String?,
+        hasMarkedText: Bool
+    ) -> Bool {
+        let flags = modifiers.intersection(.deviceIndependentFlagsMask)
+        return phase == .expression
+            && !isRepeat
+            && !hasMarkedText
+            && flags == [.command, .shift]
+            && (keyCode == 4 || characters?.lowercased() == "h")
+    }
+}
+
+private struct SpellingHintKeyboardMonitor: NSViewRepresentable {
+    let phase: SpellingSessionViewModel.Phase
+    let onHint: () -> Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator(phase: phase, onHint: onHint) }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start(for: view)
+        return view
     }
 
-    private func answerPlaceholder(for question: SpellingQuestion) -> String {
-        question.direction == .expressionToReading ? "输入假名" : "输入完整日语词形"
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.phase = phase
+        context.coordinator.onHint = onHint
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) { coordinator.stop() }
+
+    final class Coordinator {
+        var phase: SpellingSessionViewModel.Phase
+        var onHint: () -> Bool
+        private weak var hostView: NSView?
+        private var monitor: Any?
+
+        init(phase: SpellingSessionViewModel.Phase, onHint: @escaping () -> Bool) {
+            self.phase = phase
+            self.onHint = onHint
+        }
+
+        func start(for view: NSView) {
+            hostView = view
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.window === hostView?.window else { return event }
+                let markedText = (event.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+                guard SpellingHintShortcutPolicy.shouldHandle(
+                    phase: phase,
+                    isRepeat: event.isARepeat,
+                    modifiers: event.modifierFlags,
+                    keyCode: event.keyCode,
+                    characters: event.charactersIgnoringModifiers,
+                    hasMarkedText: markedText
+                ) else { return event }
+                return onHint() ? nil : event
+            }
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        }
+
+        deinit { stop() }
     }
 }
 
 #Preview {
-    let words = SampleVocabularyWords.makeWords()
+    let words = Array(SampleVocabularyWords.makeWords().prefix(3))
+    let generator = SpellingQuestionGenerator()
     SpellingView(
-        words: Array(words.prefix(3)),
-        autoSpeakAnswer: true,
-        speechState: .idle,
-        onSpeakAnswer: { _ in },
-        onSpeakExample: { _ in },
-        onStopSpeech: {},
+        expressionQuestions: generator.generateExpressionQuestions(words: words),
+        readingQuestions: generator.generateReadingQuestions(words: words),
         onComplete: { _ in }
     )
-    .frame(width: 760, height: 620)
+        .frame(width: 760, height: 620)
 }

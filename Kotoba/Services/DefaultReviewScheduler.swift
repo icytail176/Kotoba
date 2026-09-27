@@ -90,7 +90,7 @@ struct DefaultReviewScheduler: ReviewScheduler {
         case .good:
             return dayResult(days: 2, now: now, reviewCount: reviewCount, lapseCount: lapseCount)
         case .easy:
-            return dayResult(days: 4, now: now, reviewCount: reviewCount, lapseCount: lapseCount)
+            return masteredResult(now: now, reviewCount: reviewCount, lapseCount: lapseCount)
         }
     }
 
@@ -116,7 +116,7 @@ struct DefaultReviewScheduler: ReviewScheduler {
         case .good:
             return dayResult(days: 2, now: now, reviewCount: reviewCount, lapseCount: lapseCount)
         case .easy:
-            return dayResult(days: 4, now: now, reviewCount: reviewCount, lapseCount: lapseCount)
+            return masteredResult(now: now, reviewCount: reviewCount, lapseCount: lapseCount)
         }
     }
 
@@ -151,13 +151,23 @@ struct DefaultReviewScheduler: ReviewScheduler {
                 lapseCount: lapseCount
             )
         case .easy:
-            return dayResult(
-                days: multipliedIntervalDays(currentIntervalDays, multiplier: 3.0),
-                now: now,
-                reviewCount: reviewCount,
-                lapseCount: lapseCount
-            )
+            return masteredResult(now: now, reviewCount: reviewCount, lapseCount: lapseCount)
         }
+    }
+
+    private func masteredResult(
+        now: Date,
+        reviewCount: Int,
+        lapseCount: Int
+    ) -> ReviewScheduleResult {
+        ReviewScheduleResult(
+            learningState: .suspended,
+            intervalDays: 0,
+            nextReviewAt: now,
+            didLapse: false,
+            reviewCount: reviewCount,
+            lapseCount: lapseCount
+        )
     }
 
     private func multipliedIntervalDays(_ currentIntervalDays: Int, multiplier: Double) -> Int {

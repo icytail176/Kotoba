@@ -16,7 +16,7 @@ final class HomeDashboardViewModel: ObservableObject {
         wordBookName: "",
         wordBookDescription: "",
         totalWordCount: 0,
-        availableNewWordCount: 0,
+        remainingNewWordCount: 0,
         dueReviewCount: 0,
         masteredWordCount: 0,
         hasWordBooks: false,
@@ -37,7 +37,7 @@ final class HomeDashboardViewModel: ObservableObject {
     }
 
     var canStartLearning: Bool {
-        snapshot.wordBookID != nil && snapshot.availableNewWordCount > 0
+        snapshot.wordBookID != nil && snapshot.remainingNewWordCount > 0
     }
 
     var canStartReview: Bool {
@@ -47,27 +47,26 @@ final class HomeDashboardViewModel: ObservableObject {
     func load(
         context: ModelContext,
         selectedWordBookID: String,
-        dailyNewWordLimit: Int,
         updateSelectedWordBookID: (String) -> Void
     ) {
         do {
-            try wordBookService.migrateLegacyWordsIfNeeded(in: context)
-            let result = try dashboardService.makeSnapshot(
-                in: context,
-                selectedIDString: selectedWordBookID.isEmpty ? nil : selectedWordBookID,
-                dailyNewWordLimit: AppSettings.clampedDailyNewWordLimit(dailyNewWordLimit)
-            )
-            wordBooks = try wordBookService.fetchWordBooks(in: context)
-            snapshot = result.snapshot
+            try PerformanceTrace.measure("Home view model load") {
+                let result = try dashboardService.makeSnapshot(
+                    in: context,
+                    selectedIDString: selectedWordBookID.isEmpty ? nil : selectedWordBookID
+                )
+                wordBooks = result.wordBooks
+                snapshot = result.snapshot
 
-            if let resolvedID = result.resolvedWordBook?.id.uuidString,
-               resolvedID != selectedWordBookID {
-                updateSelectedWordBookID(resolvedID)
-            } else if result.resolvedWordBook == nil, !selectedWordBookID.isEmpty {
-                updateSelectedWordBookID("")
+                if let resolvedID = result.resolvedWordBook?.id.uuidString,
+                   resolvedID != selectedWordBookID {
+                    updateSelectedWordBookID(resolvedID)
+                } else if result.resolvedWordBook == nil, !selectedWordBookID.isEmpty {
+                    updateSelectedWordBookID("")
+                }
+
+                errorMessage = nil
             }
-
-            errorMessage = nil
         } catch {
             errorMessage = "首页数据加载失败：\(error.localizedDescription)"
         }
@@ -79,23 +78,25 @@ final class HomeDashboardViewModel: ObservableObject {
         }
 
         do {
-            let books = try wordBookService.fetchWordBooks(in: context)
-            guard let book = books.first(where: { $0.id == wordBookID }) else {
-                return
-            }
+            try PerformanceTrace.measure("Home random example load") {
+                let books = try wordBookService.fetchWordBooks(in: context)
+                guard let book = books.first(where: { $0.id == wordBookID }) else {
+                    return
+                }
 
-            snapshot = HomeDashboardSnapshot(
-                wordBookID: snapshot.wordBookID,
-                wordBookName: snapshot.wordBookName,
-                wordBookDescription: snapshot.wordBookDescription,
-                totalWordCount: snapshot.totalWordCount,
-                availableNewWordCount: snapshot.availableNewWordCount,
-                dueReviewCount: snapshot.dueReviewCount,
-                masteredWordCount: snapshot.masteredWordCount,
-                hasWordBooks: snapshot.hasWordBooks,
-                example: dashboardService.randomExample(from: book.words.filter { !$0.isArchived })
-            )
-            errorMessage = nil
+                snapshot = HomeDashboardSnapshot(
+                    wordBookID: snapshot.wordBookID,
+                    wordBookName: snapshot.wordBookName,
+                    wordBookDescription: snapshot.wordBookDescription,
+                    totalWordCount: snapshot.totalWordCount,
+                    remainingNewWordCount: snapshot.remainingNewWordCount,
+                    dueReviewCount: snapshot.dueReviewCount,
+                    masteredWordCount: snapshot.masteredWordCount,
+                    hasWordBooks: snapshot.hasWordBooks,
+                    example: dashboardService.randomExample(from: book.words.filter { !$0.isArchived })
+                )
+                errorMessage = nil
+            }
         } catch {
             errorMessage = "随机例句加载失败：\(error.localizedDescription)"
         }

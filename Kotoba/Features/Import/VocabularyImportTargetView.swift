@@ -13,13 +13,19 @@ struct VocabularyImportTargetView: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
                 Text("选择导入目标")
                     .font(.title2.weight(.semibold))
 
                 Text("CSV 中的重复词会按目标词书单独判断。")
                     .foregroundStyle(.secondary)
+                Text("导入至少需要 expression、reading、meaningChinese 3 个必填列；其余标准列可选，未知额外列会忽略。Kotoba 导出始终使用标准 8 列格式。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Picker("导入方式", selection: $viewModel.targetMode) {
@@ -53,6 +59,11 @@ struct VocabularyImportTargetView: View {
                 }
             }
 
+                    }
+                    .padding(24)
+                }
+
+            Divider()
             HStack {
                 Spacer()
 
@@ -63,9 +74,10 @@ struct VocabularyImportTargetView: View {
                     .disabled(!viewModel.canConfirmTarget)
                     .keyboardShortcut(.defaultAction)
             }
+            .padding(16)
+            .background(.bar)
         }
-        .padding(24)
-        .frame(width: 460)
+        .frame(minWidth: 360, idealWidth: 460, maxWidth: 560, minHeight: 300, idealHeight: 420, maxHeight: 600)
     }
 }
 

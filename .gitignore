@@ -1,31 +1,66 @@
 # macOS
 .DS_Store
 
-# Xcode user state
-xcuserdata/
-*.xcuserstate
-
-# Xcode build products
-build/
+# Xcode
 DerivedData/
-*.xcarchive
+build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
 
 # Swift Package Manager
 .build/
 Packages/
 Package.resolved
 
-# CocoaPods / Carthage local builds
-Pods/
-Carthage/Build/
+# Logs
+*.log
+*.xcresult
+*.profraw
 
-# Fastlane reports and screenshots
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots/**/*.png
-fastlane/test_output/
-
-# App packaging
+# Archives / exported builds
+*.xcarchive
 *.ipa
-*.dSYM.zip
-*.dSYM
+*.pkg
+*.dmg
+*.zip
+
+# Local config
+.env
+.env.*
+
+# Local data-audit inputs and tooling
+/Scripts/
+/Kotoba/Resources/original_backup/
+/pre_conjugation_audit_backup/
+/Kotoba_BuiltIn_Conjugation_Corrections.csv
+/Kotoba_Loanword_Etymology_Corrections.csv
+
+# Local engineering and release reports
+/CHANGELOG_FIRST_FIX.md
+/INTERRUPTION_FIX_REPORT.md
+/INTERRUPTION_RECOVERY_STATUS.md
+/KOTOBA_PERFORMANCE_REPORT.md
+/KOTOBA_UPDATE_REPORT.md
+/PERFORMANCE_BASELINE.md
+/PROJECT_STATUS_REPORT.md
+/Kotoba_0.2.0_Manual_RC_Checklist.md
+/Kotoba_0.2.0_Release_Candidate_Final_Audit.md
+/Kotoba_BuiltIn_Conjugation_Audit.md
+/Kotoba_Core_Learning_Refactor_Report.md
+/Kotoba_Correctness_Fix_Report.md
+/Kotoba_Current_Full_Audit.md
+/Kotoba_Data_Model_Simplification_Report.md
+/Kotoba_Final_Performance_And_Manual_Verification_Report.md
+/Kotoba_Full_Feature_Inventory.md
+/Kotoba_Latest_Feature_Status.md
+/Kotoba_Loanword_Etymology_Audit.md
+/Kotoba_Optimization_Audit.md
+/Kotoba_Performance_Audit_Report.md
+/Kotoba_Performance_Optimization_Report.md
+/Kotoba_Project_Status_Report.md
+/Kotoba_Two_Phase_Spelling_And_Loanword_Etymology_Report.md
+/Kotoba_UI_Cleanup_Audit_Report.md
+/Kotoba_Backup_Background_Import_Report.md
+/Kotoba_0.2.0_Source_Manifest.md
+/Kotoba_0.2.0_Release_Unblock_Final_Report.md

@@ -18,58 +18,104 @@ struct WordbookFilterBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                TextField("搜索单词、假名或中文释义", text: $filters.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .focused(searchFieldFocus)
-                    .frame(minWidth: 160, maxWidth: .infinity)
+            ViewThatFits(in: .horizontal) {
+                topControls
 
-                Toggle("仅收藏", isOn: $filters.favoritesOnly)
-                    .toggleStyle(.checkbox)
-
-                Spacer()
-
-                Button(action: onImport) {
-                    Label("导入 CSV", systemImage: "square.and.arrow.down")
+                VStack(alignment: .leading, spacing: 10) {
+                    searchControls
+                    actionControls
                 }
-
-                Button(action: onAdd) {
-                    Label("新增单词", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
             }
 
-            HStack(spacing: 10) {
-                Picker("词书", selection: $filters.wordBookID) {
-                    Text("当前词书").tag(WordbookFilters.currentWordBookValue)
-                    Text("全部词书").tag(WordbookFilterValue.all.rawValue)
-                    ForEach(optionSets.wordBooks) { wordBook in
-                        Text(wordBook.name).tag(wordBook.id.uuidString)
-                    }
+            ViewThatFits(in: .horizontal) {
+                filterControls
+
+                VStack(alignment: .leading, spacing: 10) {
+                    wordBookAndLevelFilters
+                    metadataFilters
+                    Button("清除筛选", action: onClear)
+                        .disabled(!isFiltering)
                 }
-                .frame(minWidth: 120, maxWidth: 180)
-
-                filterPicker("JLPT", selection: $filters.jlptLevel, values: optionSets.jlptLevels)
-                filterPicker("词性", selection: $filters.partOfSpeech, values: optionSets.partsOfSpeech)
-                filterPicker("标签", selection: $filters.tag, values: optionSets.tags)
-
-                Picker("学习状态", selection: $filters.learningState) {
-                    Text("全部").tag(WordbookFilterValue.all.rawValue)
-                    ForEach(optionSets.learningStates) { state in
-                        Text(state.displayName).tag(state.rawValue)
-                    }
-                }
-                .frame(minWidth: 110, maxWidth: 140)
-
-                Spacer()
-
-                Button("清除筛选", action: onClear)
-                    .disabled(!isFiltering)
             }
         }
         .padding(.horizontal, 24)
         .padding(.top, 18)
         .padding(.bottom, 12)
+    }
+
+    private var topControls: some View {
+        HStack(spacing: 10) {
+            searchControls
+            Spacer(minLength: 8)
+            actionControls
+        }
+    }
+
+    private var searchControls: some View {
+        HStack(spacing: 10) {
+            TextField("搜索单词、假名或中文释义", text: $filters.searchText)
+                .textFieldStyle(.roundedBorder)
+                .focused(searchFieldFocus)
+                .frame(minWidth: 160, idealWidth: 240, maxWidth: .infinity)
+
+            Toggle("仅收藏", isOn: $filters.favoritesOnly)
+                .toggleStyle(.checkbox)
+        }
+    }
+
+    private var actionControls: some View {
+        HStack(spacing: 10) {
+            Button(action: onImport) {
+                Label("导入 CSV", systemImage: "square.and.arrow.down")
+            }
+
+            Button(action: onAdd) {
+                Label("新增单词", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var filterControls: some View {
+        HStack(spacing: 10) {
+            wordBookAndLevelFilters
+            metadataFilters
+
+            Spacer(minLength: 8)
+
+            Button("清除筛选", action: onClear)
+                .disabled(!isFiltering)
+        }
+    }
+
+    private var wordBookAndLevelFilters: some View {
+        HStack(spacing: 10) {
+            Picker("词书", selection: $filters.wordBookID) {
+                Text("当前词书").tag(WordbookFilters.currentWordBookValue)
+                Text("全部词书").tag(WordbookFilterValue.all.rawValue)
+                ForEach(optionSets.wordBooks) { wordBook in
+                    Text(wordBook.name).tag(wordBook.id.uuidString)
+                }
+            }
+            .frame(minWidth: 110, idealWidth: 130, maxWidth: 170)
+
+            filterPicker("JLPT", selection: $filters.jlptLevel, values: optionSets.jlptLevels)
+        }
+    }
+
+    private var metadataFilters: some View {
+        HStack(spacing: 10) {
+            filterPicker("词性", selection: $filters.partOfSpeech, values: optionSets.partsOfSpeech)
+            filterPicker("标签", selection: $filters.tag, values: optionSets.tags)
+
+            Picker("学习状态", selection: $filters.learningState) {
+                Text("全部").tag(WordbookFilterValue.all.rawValue)
+                ForEach(optionSets.learningStates) { state in
+                    Text(state.displayName).tag(state.rawValue)
+                }
+            }
+            .frame(minWidth: 100, idealWidth: 110, maxWidth: 130)
+        }
     }
 
     private func filterPicker(
@@ -83,7 +129,7 @@ struct WordbookFilterBar: View {
                 Text(value).tag(value)
             }
         }
-        .frame(minWidth: 90, maxWidth: 130)
+        .frame(minWidth: 82, idealWidth: 96, maxWidth: 120)
     }
 }
 

@@ -15,4 +15,19 @@ enum LearningState: String, CaseIterable, Codable, Identifiable, Sendable {
     case suspended
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .new:
+            return "新词"
+        case .learning:
+            return "学习中"
+        case .review:
+            return "复习中"
+        case .relearning:
+            return "重新学习"
+        case .suspended:
+            return "熟练"
+        }
+    }
 }

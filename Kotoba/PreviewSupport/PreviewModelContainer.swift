@@ -16,6 +16,7 @@ enum PreviewModelContainer {
         do {
             let container = try ModelContainer(
                 for: KotobaSchema.schema,
+                migrationPlan: KotobaMigrationPlan.self,
                 configurations: [configuration]
             )
 

@@ -10,16 +10,19 @@ import SwiftUI
 
 struct TodayStudyView: View {
     @Environment(\.modelContext) private var modelContext
-    @AppStorage(AppSettings.dailyNewWordLimitKey) private var dailyNewWordLimit = AppSettings.defaultDailyNewWordLimit
+    @AppStorage(AppSettings.studyGroupNewWordCountKey) private var studyGroupNewWordCount = AppSettings.defaultStudyGroupNewWordCount
+    @AppStorage(AppSettings.reviewGroupWordCountKey) private var reviewGroupWordCount = AppSettings.defaultReviewGroupWordCount
     @AppStorage(AppSettings.selectedWordBookIDKey) private var selectedWordBookID = ""
     @StateObject private var viewModel = HomeDashboardViewModel()
     @State private var activeSessionMode: StudySession.Mode?
+    @State private var isSessionExitConfirmationPresented = false
     @State private var isWordBookPickerPresented = false
     @State private var searchText = ""
-    @State private var searchScope: HomeSearchScope = .currentWordBook
     @State private var searchSuggestions: [HomeSearchSuggestion] = []
+    @State private var highlightedSuggestionID: UUID?
     @State private var selectedSearchWord: VocabularyWord?
     @State private var searchErrorMessage: String?
+    @State private var searchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
     private let searchService = HomeSearchService()
     let onOpenWordBookManagement: () -> Void
@@ -32,24 +35,7 @@ struct TodayStudyView: View {
         PageScaffold(title: "今日学习", subtitle: "选择当前词书，开始新词学习或到期复习。") {
             Group {
                 if let activeSessionMode {
-                    StudyView(
-                        wordBookID: viewModel.snapshot.wordBookID,
-                        mode: activeSessionMode,
-                        completedTitle: activeSessionMode == .newWordsOnly ? "本词书暂无新词" : "当前暂无待复习单词",
-                        completedMessage: activeSessionMode == .newWordsOnly
-                            ? "这个词书中的新词已经学完，或今日新词数量已达上限。"
-                            : "当前词书没有已经到期的复习词。"
-                    )
-                    .toolbar {
-                        ToolbarItem {
-                            Button {
-                                self.activeSessionMode = nil
-                                reloadDashboard()
-                            } label: {
-                                Label("返回首页", systemImage: "chevron.left")
-                            }
-                        }
-                    }
+                    studySessionView(for: activeSessionMode)
                 } else {
                     dashboard
                 }
@@ -58,11 +44,14 @@ struct TodayStudyView: View {
         .task(id: selectedWordBookID) {
             reloadDashboard()
         }
-        .onChange(of: dailyNewWordLimit) {
+        .onChange(of: studyGroupNewWordCount) {
+            reloadDashboard()
+        }
+        .onChange(of: reviewGroupWordCount) {
             reloadDashboard()
         }
         .onChange(of: selectedWordBookID) {
-            refreshSearchSuggestions()
+            scheduleSearchRefresh()
         }
         .sheet(isPresented: $isWordBookPickerPresented) {
             WordBookPickerSheet(
@@ -85,7 +74,12 @@ struct TodayStudyView: View {
             )
         ) {
             if let selectedSearchWord {
-                HomeSearchWordDetailView(word: selectedSearchWord)
+                HomeSearchWordDetailView(
+                    word: selectedSearchWord,
+                    onSwitchWordBook: { wordBookID in
+                        selectedWordBookID = wordBookID.uuidString
+                    }
+                )
             }
         }
         .alert(
@@ -122,6 +116,48 @@ struct TodayStudyView: View {
         } message: {
             Text(searchErrorMessage ?? "")
         }
+        .alert("退出当前学习？", isPresented: $isSessionExitConfirmationPresented) {
+            Button("继续学习", role: .cancel) {}
+            Button("退出本组", role: .destructive) {
+                activeSessionMode = nil
+                reloadDashboard()
+            }
+        } message: {
+            Text("退出后会清理当前学习会话的临时输入和拼写错题；已保存的评价记录不会删除。")
+        }
+    }
+
+    private func studySessionView(for mode: StudySession.Mode) -> some View {
+        let completedTitle = mode == .newWordsOnly ? "本词书暂无新词" : "当前暂无待复习单词"
+        let completedMessage = mode == .newWordsOnly
+            ? "这个词书中的新词已经全部学完。"
+            : "当前词书没有已经到期的复习词。"
+
+        return StudyView(
+            wordBookID: viewModel.snapshot.wordBookID,
+            mode: mode,
+            completedTitle: completedTitle,
+            completedMessage: completedMessage,
+            studyGroupNewWordCount: AppSettings.clampedStudyGroupNewWordCount(studyGroupNewWordCount),
+            reviewGroupWordCount: AppSettings.clampedReviewGroupWordCount(reviewGroupWordCount),
+            onSessionCompleted: {
+                activeSessionMode = nil
+                reloadDashboard()
+            },
+            onSessionCancelled: {
+                activeSessionMode = nil
+                reloadDashboard()
+            }
+        )
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isSessionExitConfirmationPresented = true
+                } label: {
+                    Label("返回首页", systemImage: "chevron.left")
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -132,10 +168,22 @@ struct TodayStudyView: View {
                     noWordBookState
                 } else {
                     currentWordBookHeader
+                        .onTapGesture {
+                            closeSearchFromOutside()
+                        }
                     searchSection
                     randomExampleSection
+                        .onTapGesture {
+                            closeSearchFromOutside()
+                        }
                     entrySection
+                        .onTapGesture {
+                            closeSearchFromOutside()
+                        }
                     todayStatsSection
+                        .onTapGesture {
+                            closeSearchFromOutside()
+                        }
                 }
             }
             .padding(24)
@@ -189,6 +237,13 @@ struct TodayStudyView: View {
                 Label("切换词书", systemImage: "arrow.left.arrow.right")
             }
             .accessibilityLabel("切换词书")
+
+            Button {
+                onOpenWordBookManagement()
+            } label: {
+                Label("进入词书", systemImage: "book")
+            }
+            .accessibilityLabel("进入词书")
         }
     }
 
@@ -234,11 +289,11 @@ struct TodayStudyView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("搜索单词、假名、中文释义、标签或词性", text: $searchText)
+                TextField("搜索全部词书中的单词、假名或中文释义……", text: $searchText)
                     .textFieldStyle(.plain)
                     .focused($isSearchFocused)
                     .onSubmit {
-                        openFirstSearchSuggestion()
+                        openHighlightedSearchSuggestion()
                     }
 
                 if !searchText.isEmpty {
@@ -251,14 +306,6 @@ struct TodayStudyView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("清空搜索")
                 }
-
-                Picker("搜索范围", selection: $searchScope) {
-                    ForEach(HomeSearchScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -268,15 +315,15 @@ struct TodayStudyView: View {
                     .stroke(.quaternary)
             }
             .onChange(of: searchText) {
-                refreshSearchSuggestions()
-            }
-            .onChange(of: searchScope) {
-                refreshSearchSuggestions()
+                scheduleSearchRefresh()
             }
             .onExitCommand {
                 if isSearchFocused || !searchText.isEmpty {
-                    clearSearch()
+                    closeSearchSuggestions()
                 }
+            }
+            .onMoveCommand { direction in
+                moveSearchHighlight(direction)
             }
 
             if !searchSuggestions.isEmpty {
@@ -288,6 +335,11 @@ struct TodayStudyView: View {
                             HomeSearchSuggestionRow(suggestion: suggestion)
                         }
                         .buttonStyle(.plain)
+                        .background(
+                            suggestion.id == highlightedSuggestionID
+                                ? Color.accentColor.opacity(0.14)
+                                : Color.clear
+                        )
 
                         if suggestion.id != searchSuggestions.last?.id {
                             Divider()
@@ -357,7 +409,7 @@ struct TodayStudyView: View {
 
     private var todayStatsSection: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
-            HomeMetricView(title: "今日可学习", value: "\(viewModel.snapshot.availableNewWordCount)")
+            HomeMetricView(title: "剩余新词", value: "\(viewModel.snapshot.remainingNewWordCount)")
             HomeMetricView(title: "当前待复习", value: "\(viewModel.snapshot.dueReviewCount)")
             HomeMetricView(title: "词书总词数", value: "\(viewModel.snapshot.totalWordCount)")
             HomeMetricView(title: "已进入复习", value: "\(viewModel.snapshot.masteredWordCount)")
@@ -367,12 +419,35 @@ struct TodayStudyView: View {
     private func reloadDashboard() {
         viewModel.load(
             context: modelContext,
-            selectedWordBookID: selectedWordBookID,
-            dailyNewWordLimit: dailyNewWordLimit
+            selectedWordBookID: selectedWordBookID
         ) { resolvedID in
             selectedWordBookID = resolvedID
         }
-        refreshSearchSuggestions()
+        scheduleSearchRefresh()
+    }
+
+    private func scheduleSearchRefresh() {
+        searchTask?.cancel()
+        let trimmedText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            searchSuggestions = []
+            highlightedSuggestionID = nil
+            PerformanceTrace.event("Home search task", "empty query cancelPrevious=true")
+            return
+        }
+
+        PerformanceTrace.event("Home search task", "debounce=true cancelPrevious=true")
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else {
+                PerformanceTrace.event("Home search task", "cancelled=true")
+                return
+            }
+
+            await MainActor.run {
+                refreshSearchSuggestions()
+            }
+        }
     }
 
     private func refreshSearchSuggestions() {
@@ -380,27 +455,31 @@ struct TodayStudyView: View {
             searchSuggestions = try searchService.suggestions(
                 in: modelContext,
                 query: searchText,
-                scope: searchScope,
                 currentWordBookID: viewModel.snapshot.wordBookID
             )
+            PerformanceTrace.event("Home search results", "count=\(searchSuggestions.count)")
+            highlightedSuggestionID = searchSuggestions.first?.id
             searchErrorMessage = nil
         } catch {
             searchSuggestions = []
+            highlightedSuggestionID = nil
             searchErrorMessage = "搜索本地词库失败：\(error.localizedDescription)"
         }
     }
 
-    private func openFirstSearchSuggestion() {
-        guard let firstSuggestion = searchSuggestions.first else {
+    private func openHighlightedSearchSuggestion() {
+        guard let suggestion = highlightedSuggestion
+            ?? searchSuggestions.first else {
             return
         }
 
-        openSearchSuggestion(firstSuggestion)
+        openSearchSuggestion(suggestion)
     }
 
     private func openSearchSuggestion(_ suggestion: HomeSearchSuggestion) {
         do {
             selectedSearchWord = try searchService.fetchWord(id: suggestion.wordID, in: modelContext)
+            closeSearchSuggestions(keepsText: true)
             searchErrorMessage = nil
         } catch {
             selectedSearchWord = nil
@@ -410,10 +489,55 @@ struct TodayStudyView: View {
 
     private func clearSearch() {
         searchText = ""
-        searchSuggestions = []
+        closeSearchSuggestions()
         selectedSearchWord = nil
         searchErrorMessage = nil
         isSearchFocused = false
+    }
+
+    private func closeSearchSuggestions(keepsText: Bool = false) {
+        searchTask?.cancel()
+        if !keepsText {
+            searchText = ""
+        }
+        searchSuggestions = []
+        highlightedSuggestionID = nil
+    }
+
+    private func closeSearchFromOutside() {
+        guard isSearchFocused || !searchSuggestions.isEmpty else {
+            return
+        }
+
+        isSearchFocused = false
+        closeSearchSuggestions(keepsText: true)
+    }
+
+    private var highlightedSuggestion: HomeSearchSuggestion? {
+        guard let highlightedSuggestionID else {
+            return nil
+        }
+
+        return searchSuggestions.first { $0.id == highlightedSuggestionID }
+    }
+
+    private func moveSearchHighlight(_ direction: MoveCommandDirection) {
+        guard isSearchFocused, !searchSuggestions.isEmpty else {
+            return
+        }
+
+        let currentIndex = highlightedSuggestionID.flatMap { id in
+            searchSuggestions.firstIndex { $0.id == id }
+        } ?? 0
+
+        switch direction {
+        case .down:
+            highlightedSuggestionID = searchSuggestions[min(currentIndex + 1, searchSuggestions.count - 1)].id
+        case .up:
+            highlightedSuggestionID = searchSuggestions[max(currentIndex - 1, 0)].id
+        default:
+            break
+        }
     }
 }
 
@@ -453,11 +577,14 @@ private struct HomeSearchSuggestionRow: View {
 
 private struct HomeSearchWordDetailView: View {
     let word: VocabularyWord
+    let onSwitchWordBook: (UUID) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(word.japanese)
                         .font(.largeTitle.weight(.semibold))
@@ -496,18 +623,31 @@ private struct HomeSearchWordDetailView: View {
                 .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            Spacer(minLength: 0)
+                    }
+                    .padding(24)
+                }
 
+            Divider()
             HStack {
+                if let wordBookID = word.wordBook?.id {
+                    Button {
+                        onSwitchWordBook(wordBookID)
+                        dismiss()
+                    } label: {
+                        Label("切换到该词书", systemImage: "arrow.left.arrow.right")
+                    }
+                }
+
                 Spacer()
                 Button("关闭") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
             }
+            .padding(16)
+            .background(.bar)
         }
-        .padding(24)
-        .frame(width: 520, height: 520)
+        .frame(minWidth: 400, idealWidth: 620, maxWidth: 720, minHeight: 360, idealHeight: 600, maxHeight: 720)
     }
 
     private var detailRows: [(String, String)] {
@@ -520,7 +660,7 @@ private struct HomeSearchWordDetailView: View {
         ]
 
         if let dueAt = word.progress?.dueAt {
-            rows.append(("下次复习", dueAt.formatted(date: .abbreviated, time: .shortened)))
+            rows.append(("下次复习", NextReviewDateFormatter.string(for: dueAt)))
         }
 
         if !word.tags.isEmpty {
@@ -643,7 +783,7 @@ private struct WordBookPickerSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 420, height: 360)
+        .frame(minWidth: 340, idealWidth: 420, maxWidth: 520, minHeight: 300, idealHeight: 360, maxHeight: 520)
     }
 }
 

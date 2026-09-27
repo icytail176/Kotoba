@@ -16,13 +16,8 @@ struct DataManagementService {
             let words = try context.fetch(FetchDescriptor<VocabularyWord>())
             let progressItems = try context.fetch(FetchDescriptor<LearningProgress>())
             let logs = try context.fetch(FetchDescriptor<ReviewLog>())
-            let conjugationRecords = try context.fetch(FetchDescriptor<ConjugationRecord>())
             let orphanProgress = progressItems.filter { $0.word == nil }
             let orphanLogs = logs.filter { $0.word == nil }
-
-            for record in conjugationRecords {
-                context.delete(record)
-            }
 
             for wordBook in wordBooks {
                 context.delete(wordBook)

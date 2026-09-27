@@ -7,6 +7,7 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 final class SampleVocabularyWordsTests: XCTestCase {

@@ -37,8 +37,6 @@ struct StudySession {
 
     let status: Status
     let items: [Item]
-    let newWordLimit: Int
-    let newWordsAlreadyIntroducedToday: Int
 
     var isCompleted: Bool {
         status == .completed

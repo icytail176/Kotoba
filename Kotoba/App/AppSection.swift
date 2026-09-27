@@ -21,9 +21,9 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .today:
             "今日学习"
         case .wordbook:
-            "单词本"
+            "单词管理"
         case .wordBooks:
-            "词书管理"
+            "词书"
         case .statistics:
             "学习统计"
         case .settings:

@@ -6,6 +6,7 @@
 //
 
 import XCTest
+@testable import Kotoba
 
 final class CSVParserTests: XCTestCase {
     func testParsesQuotedCommasAndEscapedQuotes() throws {

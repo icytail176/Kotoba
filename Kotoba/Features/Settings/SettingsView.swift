@@ -1,141 +1,54 @@
-//
-//  SettingsView.swift
-//  Kotoba
-//
-//  Created by Codex on 2026/6/16.
-//
-
-import SwiftUI
 import SwiftData
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
-    @AppStorage(AppSettings.dailyNewWordLimitKey) private var dailyNewWordLimit = AppSettings.defaultDailyNewWordLimit
-    @AppStorage(AppSettings.japaneseSpeechRateKey) private var japaneseSpeechRate = AppSettings.defaultJapaneseSpeechRate
-    @AppStorage(AppSettings.autoSpeakWordKey) private var autoSpeakWord = AppSettings.defaultAutoSpeakWord
-    @AppStorage(AppSettings.autoSpeakExampleKey) private var autoSpeakExample = AppSettings.defaultAutoSpeakExample
-    @AppStorage(AppSettings.randomizeStudyQueueKey) private var randomizeStudyQueue = AppSettings.defaultRandomizeStudyQueue
-    @AppStorage(AppSettings.lmStudioEnabledKey) private var lmStudioEnabled = AppSettings.defaultLMStudioEnabled
-    @AppStorage(AppSettings.lmStudioBaseURLKey) private var lmStudioBaseURL = AppSettings.defaultLMStudioBaseURL
-    @AppStorage(AppSettings.lmStudioModelKey) private var lmStudioModel = AppSettings.defaultLMStudioModel
-    @AppStorage(AppSettings.lmStudioTimeoutKey) private var lmStudioTimeout = AppSettings.defaultLMStudioTimeout
-    @AppStorage(AppSettings.lmStudioBatchSizeKey) private var lmStudioBatchSize = AppSettings.defaultLMStudioBatchSize
-    @AppStorage(AppSettings.autoGenerateConjugationsKey) private var autoGenerateConjugations = AppSettings.defaultAutoGenerateConjugations
+    @AppStorage(AppSettings.studyGroupNewWordCountKey) private var studyGroupNewWordCount = AppSettings.defaultStudyGroupNewWordCount
+    @AppStorage(AppSettings.reviewGroupWordCountKey) private var reviewGroupWordCount = AppSettings.defaultReviewGroupWordCount
     @StateObject private var viewModel = SettingsViewModel()
 
     var body: some View {
-        PageScaffold(title: "设置", subtitle: "调整 Kotoba 的本地学习偏好。") {
+        PageScaffold(title: "设置", subtitle: "调整学习数量与管理本地数据。") {
             Form {
                 Section("学习") {
-                    Stepper(value: dailyNewWordLimitBinding, in: AppSettings.minimumDailyNewWordLimit...AppSettings.maximumDailyNewWordLimit) {
-                        LabeledContent("每日新词数量") {
-                            Text("\(dailyNewWordLimitBinding.wrappedValue)")
-                                .monospacedDigit()
-                        }
+                    Stepper(value: studyGroupNewWordCountBinding, in: AppSettings.minimumStudyGroupNewWordCount...AppSettings.maximumStudyGroupNewWordCount) {
+                        LabeledContent("每组学习新词数量") { Text("\(studyGroupNewWordCountBinding.wrappedValue)").monospacedDigit() }
                     }
-
-                    Toggle("学习队列随机排列", isOn: $randomizeStudyQueue)
-
-                    LabeledContent("最大复习周期") {
-                        Text("\(AppSettings.maximumReviewIntervalDays) 天")
+                    Stepper(value: reviewGroupWordCountBinding, in: AppSettings.minimumReviewGroupWordCount...AppSettings.maximumReviewGroupWordCount) {
+                        LabeledContent("每组复习数量") { Text("\(reviewGroupWordCountBinding.wrappedValue)").monospacedDigit() }
+                    }
+                    LabeledContent("学习顺序") {
+                        Text("每组自动随机")
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("朗读") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("日语朗读速度") {
-                            Text(speechRateText)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Slider(
-                            value: japaneseSpeechRateBinding,
-                            in: AppSettings.minimumJapaneseSpeechRate...AppSettings.maximumJapaneseSpeechRate
-                        ) {
-                            Text("日语朗读速度")
-                        } minimumValueLabel: {
-                            Text("慢")
-                        } maximumValueLabel: {
-                            Text("快")
-                        }
+                Section("数据") {
+                    Button { viewModel.prepareFullBackupExport(context: modelContext) } label: {
+                        Label("导出备份", systemImage: "externaldrive")
                     }
-
-                    Toggle("自动朗读单词", isOn: $autoSpeakWord)
-                    Toggle("自动朗读例句", isOn: $autoSpeakExample)
-                }
-
-                Section("LM Studio") {
-                    Toggle("启用本地活用生成", isOn: $lmStudioEnabled)
-
-                    TextField("服务地址", text: $lmStudioBaseURL)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!lmStudioEnabled)
-
-                    TextField("模型名称", text: $lmStudioModel)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!lmStudioEnabled)
-
-                    Stepper(value: lmStudioTimeoutBinding, in: AppSettings.minimumLMStudioTimeout...AppSettings.maximumLMStudioTimeout, step: 5) {
-                        LabeledContent("超时时间") {
-                            Text("\(Int(lmStudioTimeoutBinding.wrappedValue)) 秒")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
+                    .disabled(viewModel.isImportingBackup)
+                    Button { viewModel.isBackupImporterPresented = true } label: {
+                        Label("导入备份", systemImage: "tray.and.arrow.down")
                     }
-                    .disabled(!lmStudioEnabled)
-
-                    Stepper(value: lmStudioBatchSizeBinding, in: AppSettings.minimumLMStudioBatchSize...AppSettings.maximumLMStudioBatchSize) {
-                        LabeledContent("批量数量") {
-                            Text("\(lmStudioBatchSizeBinding.wrappedValue)")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
+                    .disabled(viewModel.isImportingBackup)
+                    Button { viewModel.prepareExport(context: modelContext) } label: {
+                        Label("导出词书 CSV", systemImage: "square.and.arrow.up")
                     }
-                    .disabled(!lmStudioEnabled)
-
-                    Toggle("自动补全活用缓存", isOn: $autoGenerateConjugations)
-                        .disabled(!lmStudioEnabled)
-
-                    HStack {
-                        Button {
-                            viewModel.testLMStudioConnection(
-                                baseURLString: lmStudioBaseURL,
-                                modelName: lmStudioModel,
-                                timeout: lmStudioTimeout
-                            )
-                        } label: {
-                            Label("测试连接", systemImage: "network")
-                        }
-                        .disabled(!lmStudioEnabled || viewModel.isTestingLMStudio)
-
-                        if viewModel.isTestingLMStudio {
+                    .disabled(viewModel.isImportingBackup)
+                    if viewModel.isImportingBackup {
+                        HStack(spacing: 10) {
                             ProgressView()
                                 .controlSize(.small)
-                        }
-
-                        if let status = viewModel.lmStudioStatusMessage {
-                            Text(status)
-                                .font(.caption)
+                            Text(viewModel.backupImportStatus ?? "正在导入备份…")
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     }
-                }
-
-                Section("数据") {
-                    Button {
-                        viewModel.prepareExport(context: modelContext)
-                    } label: {
-                        Label("导出词书为 CSV", systemImage: "square.and.arrow.up")
-                    }
-
-                    Button(role: .destructive) {
-                        viewModel.requestClearAllData()
-                    } label: {
-                        Label("清空全部数据", systemImage: "trash")
-                    }
+                    Text("备份包含词书、词条、学习进度与复习记录。导入前会要求选择合并策略。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
@@ -144,105 +57,112 @@ struct SettingsView: View {
         .fileExporter(
             isPresented: $viewModel.isExporterPresented,
             document: viewModel.exportDocument,
-            contentType: UTType(filenameExtension: "csv") ?? .plainText,
+            contentType: .commaSeparatedText,
             defaultFilename: "kotoba_vocabulary.csv"
+        ) { viewModel.handleExportCompletion($0) }
+        .fileExporter(
+            isPresented: $viewModel.isBackupExporterPresented,
+            document: viewModel.backupDocument,
+            contentType: .json,
+            defaultFilename: viewModel.defaultBackupFileName
+        ) { viewModel.handleBackupExportCompletion($0) }
+        .fileImporter(
+            isPresented: $viewModel.isBackupImporterPresented,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
         ) { result in
-            viewModel.handleExportCompletion(result)
-        }
-        .alert(
-            "确认清空全部数据？",
-            isPresented: $viewModel.isFirstClearConfirmationPresented
-        ) {
-            Button("取消", role: .cancel) {}
-            Button("继续确认", role: .destructive) {
-                viewModel.continueToFinalClearConfirmation()
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { viewModel.prepareBackupImport(from: url) }
+            case .failure(let error):
+                viewModel.errorMessage = error.localizedDescription
             }
-        } message: {
-            Text("这会删除全部单词、学习进度和复习记录。下一步仍需输入确认文字后才会执行。")
         }
-        .sheet(isPresented: $viewModel.isFinalClearConfirmationPresented) {
-            ClearAllDataConfirmationSheet(
-                confirmationText: $viewModel.clearConfirmationText,
-                requiredPhrase: SettingsViewModel.clearAllDataConfirmationPhrase,
-                canConfirm: viewModel.canClearAllData,
-                onCancel: {
-                    viewModel.cancelFinalClearConfirmation()
-                },
-                onConfirm: {
-                    viewModel.clearAllData(context: modelContext)
-                }
+        .sheet(isPresented: $viewModel.isBackupImportConfirmationPresented) {
+            BackupImportConfirmationSheet(
+                strategy: $viewModel.backupImportStrategy,
+                isImporting: viewModel.isImportingBackup,
+                statusText: viewModel.backupImportStatus,
+                onCancel: { viewModel.cancelBackupImport() },
+                onConfirm: { viewModel.confirmBackupImport(context: modelContext) }
             )
         }
-        .alert(
-            "设置操作失败",
-            isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        viewModel.errorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("好") {
-                viewModel.errorMessage = nil
+        .alert("设置操作失败", isPresented: messageBinding($viewModel.errorMessage)) {
+            Button("好") { viewModel.errorMessage = nil }
+        } message: { Text(viewModel.errorMessage ?? "") }
+        .alert("操作完成", isPresented: messageBinding($viewModel.successMessage)) {
+            Button("好") { viewModel.successMessage = nil }
+        } message: { Text(viewModel.successMessage ?? "") }
+    }
+
+    private var studyGroupNewWordCountBinding: Binding<Int> {
+        Binding {
+            AppSettings.clampedStudyGroupNewWordCount(studyGroupNewWordCount)
+        } set: { studyGroupNewWordCount = AppSettings.clampedStudyGroupNewWordCount($0) }
+    }
+
+    private var reviewGroupWordCountBinding: Binding<Int> {
+        Binding {
+            AppSettings.clampedReviewGroupWordCount(reviewGroupWordCount)
+        } set: { reviewGroupWordCount = AppSettings.clampedReviewGroupWordCount($0) }
+    }
+
+    private func messageBinding(_ message: Binding<String?>) -> Binding<Bool> {
+        Binding {
+            message.wrappedValue != nil
+        } set: { isPresented in
+            if !isPresented { message.wrappedValue = nil }
+        }
+    }
+}
+
+private struct BackupImportConfirmationSheet: View {
+    @Binding var strategy: KotobaBackupImportStrategy
+    let isImporting: Bool
+    let statusText: String?
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("导入备份").font(.title3.weight(.semibold))
+            Text("导入会修改本地词书、学习进度和复习记录。请选择处理重复数据的方式。")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("导入策略", selection: $strategy) {
+                ForEach(KotobaBackupImportStrategy.allCases) { Text($0.title).tag($0) }
             }
-        } message: {
-            Text(viewModel.errorMessage ?? "")
-        }
-        .alert(
-            "操作完成",
-            isPresented: Binding(
-                get: { viewModel.successMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        viewModel.successMessage = nil
-                    }
+            .pickerStyle(.segmented)
+            .disabled(isImporting)
+            if isImporting {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(statusText ?? "正在导入备份…")
+                        .foregroundStyle(.secondary)
                 }
-            )
-        ) {
-            Button("好") {
-                viewModel.successMessage = nil
+                .accessibilityElement(children: .combine)
             }
-        } message: {
-            Text(viewModel.successMessage ?? "")
-        }
-    }
+                }
+                .padding(24)
+            }
 
-    private var dailyNewWordLimitBinding: Binding<Int> {
-        Binding {
-            AppSettings.clampedDailyNewWordLimit(dailyNewWordLimit)
-        } set: { newValue in
-            dailyNewWordLimit = AppSettings.clampedDailyNewWordLimit(newValue)
+            Divider()
+            HStack {
+                Spacer()
+                Button("取消", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isImporting)
+                Button("确认导入", action: onConfirm)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isImporting)
+            }
+            .padding(16)
+            .background(.bar)
         }
-    }
-
-    private var japaneseSpeechRateBinding: Binding<Double> {
-        Binding {
-            AppSettings.clampedJapaneseSpeechRate(japaneseSpeechRate)
-        } set: { newValue in
-            japaneseSpeechRate = AppSettings.clampedJapaneseSpeechRate(newValue)
-        }
-    }
-
-    private var speechRateText: String {
-        "\(Int((japaneseSpeechRateBinding.wrappedValue / AppSettings.defaultJapaneseSpeechRate * 100).rounded()))%"
-    }
-
-    private var lmStudioTimeoutBinding: Binding<Double> {
-        Binding {
-            AppSettings.clampedLMStudioTimeout(lmStudioTimeout)
-        } set: { newValue in
-            lmStudioTimeout = AppSettings.clampedLMStudioTimeout(newValue)
-        }
-    }
-
-    private var lmStudioBatchSizeBinding: Binding<Int> {
-        Binding {
-            AppSettings.clampedLMStudioBatchSize(lmStudioBatchSize)
-        } set: { newValue in
-            lmStudioBatchSize = AppSettings.clampedLMStudioBatchSize(newValue)
-        }
+        .frame(minWidth: 360, idealWidth: 460, maxWidth: 560, minHeight: 260, idealHeight: 340, maxHeight: 520)
+        .interactiveDismissDisabled(isImporting)
     }
 }
 
@@ -250,41 +170,4 @@ struct SettingsView: View {
     SettingsView()
         .modelContainer(PreviewModelContainer.make())
         .frame(width: 700, height: 500)
-}
-
-private struct ClearAllDataConfirmationSheet: View {
-    @Binding var confirmationText: String
-    let requiredPhrase: String
-    let canConfirm: Bool
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("二次确认")
-                    .font(.title3.weight(.semibold))
-
-                Text("请输入“\(requiredPhrase)”以确认清空全部本地数据。此操作不可撤销。")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            TextField("确认文字", text: $confirmationText)
-                .textFieldStyle(.roundedBorder)
-
-            HStack {
-                Spacer()
-
-                Button("取消", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-
-                Button("清空全部数据", role: .destructive, action: onConfirm)
-                    .disabled(!canConfirm)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(24)
-        .frame(width: 420)
-    }
 }

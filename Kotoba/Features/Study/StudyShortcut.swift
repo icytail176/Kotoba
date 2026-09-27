@@ -10,8 +10,5 @@ import Foundation
 enum StudyShortcut: Equatable {
     case showAnswer
     case rate(ReviewRating)
-    case speakWord
-    case speakExample
-    case stopSpeech
     case toggleFavorite
 }

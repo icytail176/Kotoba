@@ -29,6 +29,7 @@ enum VocabularyImportTargetMode: String, CaseIterable, Identifiable {
 final class VocabularyImportViewModel: ObservableObject {
     @Published var preview: VocabularyImportPreview?
     @Published var result: VocabularyImportResult?
+    @Published var qualityReport: VocabularyImportQualityReport?
     @Published var duplicateHandling: VocabularyDuplicateHandling = .skip
     @Published var errorMessage: String?
     @Published private(set) var isImporting = false
@@ -40,13 +41,19 @@ final class VocabularyImportViewModel: ObservableObject {
     @Published private(set) var availableWordBooks: [WordBook] = []
 
     private let service: VocabularyCSVImportService
+    private let qualityService: VocabularyImportQualityService
     private let wordBookService: WordBookService
     private var pendingFileData: Data?
     private var pendingFileName = ""
     private var pendingTarget: VocabularyImportTarget?
 
-    init(service: VocabularyCSVImportService? = nil, wordBookService: WordBookService? = nil) {
+    init(
+        service: VocabularyCSVImportService? = nil,
+        qualityService: VocabularyImportQualityService? = nil,
+        wordBookService: WordBookService? = nil
+    ) {
         self.service = service ?? VocabularyCSVImportService()
+        self.qualityService = qualityService ?? VocabularyImportQualityService()
         self.wordBookService = wordBookService ?? WordBookService()
     }
 
@@ -61,6 +68,7 @@ final class VocabularyImportViewModel: ObservableObject {
 
     func prepareFile(from url: URL, context: ModelContext, preferredWordBookID: String = "") {
         result = nil
+        qualityReport = nil
         errorMessage = nil
         duplicateHandling = .skip
         pendingTarget = nil
@@ -92,9 +100,11 @@ final class VocabularyImportViewModel: ObservableObject {
             }
 
             preview = nil
+            qualityReport = nil
             isTargetConfigurationPresented = true
         } catch {
             preview = nil
+            qualityReport = nil
             pendingFileData = nil
             errorMessage = error.localizedDescription
         }
@@ -108,12 +118,18 @@ final class VocabularyImportViewModel: ObservableObject {
         do {
             let target = try makeTarget()
             let targetWordBook = try targetWordBook(for: target, context: context)
-            preview = try service.makePreview(
+            let importPreview = try service.makePreview(
                 from: pendingFileData,
                 fileName: pendingFileName,
                 context: context,
                 targetWordBook: targetWordBook,
                 createsNewWordBook: targetMode == .newWordBook
+            )
+            preview = importPreview
+            qualityReport = try qualityService.makeReport(
+                preview: importPreview,
+                context: context,
+                targetWordBook: targetWordBook
             )
             pendingTarget = target
             isTargetConfigurationPresented = false
@@ -140,7 +156,15 @@ final class VocabularyImportViewModel: ObservableObject {
             self.preview = nil
             pendingFileData = nil
             pendingTarget = nil
-            result = importResult
+            result = VocabularyImportResult(
+                insertedCount: importResult.insertedCount,
+                updatedCount: importResult.updatedCount,
+                skippedDuplicateCount: importResult.skippedDuplicateCount,
+                ignoredErrorCount: importResult.ignoredErrorCount,
+                wordBookID: importResult.wordBookID,
+                wordBookName: importResult.wordBookName,
+                qualityReport: qualityReport
+            )
         } catch {
             errorMessage = "导入失败：\(error.localizedDescription)"
         }
@@ -148,16 +172,19 @@ final class VocabularyImportViewModel: ObservableObject {
 
     func cancelPreview() {
         preview = nil
+        qualityReport = nil
     }
 
     func cancelTargetSelection() {
         isTargetConfigurationPresented = false
         pendingFileData = nil
         pendingTarget = nil
+        qualityReport = nil
     }
 
     func dismissResult() {
         result = nil
+        qualityReport = nil
     }
 
     private func makeTarget() throws -> VocabularyImportTarget {

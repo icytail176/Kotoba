@@ -7,6 +7,7 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 final class StudyQueueServiceTests: XCTestCase {
@@ -38,14 +39,14 @@ final class StudyQueueServiceTests: XCTestCase {
         [newWord, newerDue, olderDue].forEach(context.insert)
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(in: context, now: now, randomizesQueue: false)
 
         XCTAssertEqual(session.status, .ready)
         XCTAssertEqual(session.items.map { $0.word.japanese }, ["確認", "便利", "学生"])
         XCTAssertEqual(session.items.map(\.kind), [.dueReview, .dueReview, .newWord])
     }
 
-    func testDefaultDailyNewWordLimitIsTwenty() throws {
+    func testDefaultStudyGroupContainsTenWordsWithoutADailyLimit() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -57,12 +58,11 @@ final class StudyQueueServiceTests: XCTestCase {
 
         let session = try service.buildSession(in: context, now: now)
 
-        XCTAssertEqual(session.newWordLimit, 20)
-        XCTAssertEqual(session.items.count, 20)
+        XCTAssertEqual(session.items.count, 10)
         XCTAssertTrue(session.items.allSatisfy { $0.kind == .newWord })
     }
 
-    func testCustomDailyNewWordLimitIsApplied() throws {
+    func testCustomStudyGroupLimitIsApplied() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -72,14 +72,79 @@ final class StudyQueueServiceTests: XCTestCase {
         }
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 3)
+        let session = try service.buildSession(
+            in: context,
+            now: now,
+            studyGroupNewWordCount: 3,
+            randomizesQueue: false
+        )
 
-        XCTAssertEqual(session.newWordLimit, 3)
         XCTAssertEqual(session.items.count, 3)
         XCTAssertEqual(session.items.map { $0.word.japanese }, ["単語0", "単語1", "単語2"])
     }
 
-    func testIntroducedNewWordsTodayCountAgainstDailyLimit() throws {
+    func testStudyGroupNewWordCountLimitsNewWords() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+
+        for index in 0..<8 {
+            context.insert(makeWord("组词\(index)", state: .new, dueAt: now, createdAt: addingMinutes(index, to: now)))
+        }
+        try context.save()
+
+        let session = try service.buildSession(
+            in: context,
+            mode: .newWordsOnly,
+            now: now,
+            studyGroupNewWordCount: 3,
+            randomizesQueue: false
+        )
+
+        XCTAssertEqual(session.items.count, 3)
+        XCTAssertEqual(session.items.map { $0.word.japanese }, ["组词0", "组词1", "组词2"])
+    }
+
+    func testReviewGroupWordCountLimitsDueReviews() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+
+        for index in 0..<5 {
+            context.insert(makeWord("复习\(index)", state: .review, dueAt: addingDays(-index, to: now), createdAt: addingMinutes(index, to: now)))
+        }
+        try context.save()
+
+        let session = try service.buildSession(
+            in: context,
+            mode: .dueReviewsOnly,
+            now: now,
+            reviewGroupWordCount: 2,
+            randomizesQueue: false
+        )
+
+        XCTAssertEqual(session.items.count, 2)
+        XCTAssertTrue(session.items.allSatisfy { $0.kind == .dueReview })
+        XCTAssertEqual(session.items.map { $0.word.japanese }, ["复习4", "复习3"])
+    }
+
+    func testReviewDueLaterTodayIsIncludedButRelearningWaitsForExactTime() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+        let reviewLaterToday = makeWord("今日复习", state: .review, dueAt: makeDate(year: 2026, month: 6, day: 16, hour: 23), createdAt: now)
+        let relearningLaterToday = makeWord("十分钟后", state: .relearning, dueAt: addingMinutes(10, to: now), createdAt: now)
+
+        context.insert(reviewLaterToday)
+        context.insert(relearningLaterToday)
+        try context.save()
+
+        let session = try service.buildSession(in: context, mode: .dueReviewsOnly, now: now)
+
+        XCTAssertEqual(session.items.map { $0.word.japanese }, ["今日复习"])
+    }
+
+    func testPreviouslyIntroducedWordsDoNotReduceNextGroupCapacity() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -106,15 +171,19 @@ final class StudyQueueServiceTests: XCTestCase {
         }
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(
+            in: context,
+            now: now,
+            studyGroupNewWordCount: 5,
+            randomizesQueue: false
+        )
 
-        XCTAssertEqual(session.newWordsAlreadyIntroducedToday, 19)
-        XCTAssertEqual(session.items.count, 1)
+        XCTAssertEqual(session.items.count, 5)
         XCTAssertEqual(session.items.first?.word.japanese, "候补0")
-        XCTAssertEqual(session.items.first?.kind, .newWord)
+        XCTAssertTrue(session.items.allSatisfy { $0.kind == .newWord })
     }
 
-    func testCompletedDailyNewWordLimitDoesNotAddMoreNewWordsOnReopen() throws {
+    func testMoreThanFormerDailyLimitDoesNotBlockAnotherGroup() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -141,11 +210,16 @@ final class StudyQueueServiceTests: XCTestCase {
         }
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(
+            in: context,
+            now: now,
+            studyGroupNewWordCount: 10,
+            randomizesQueue: false
+        )
 
-        XCTAssertEqual(session.newWordsAlreadyIntroducedToday, 20)
-        XCTAssertTrue(session.items.isEmpty)
-        XCTAssertEqual(session.status, .completed)
+        XCTAssertEqual(session.items.count, 10)
+        XCTAssertEqual(session.status, .ready)
+        XCTAssertTrue(session.items.allSatisfy { $0.kind == .newWord })
     }
 
     func testRelearningWordRejoinsQueueWhenDue() throws {
@@ -159,7 +233,7 @@ final class StudyQueueServiceTests: XCTestCase {
         context.insert(futureRelearning)
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(in: context, now: now)
 
         XCTAssertEqual(session.items.count, 1)
         XCTAssertEqual(session.items.first?.word.japanese, "忘れる")
@@ -175,13 +249,13 @@ final class StudyQueueServiceTests: XCTestCase {
         context.insert(makeWord("学生", state: .new, dueAt: now, createdAt: addingDays(-1, to: now)))
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(in: context, now: now)
         let ids = session.items.map(\.id)
 
         XCTAssertEqual(ids.count, Set(ids).count)
     }
 
-    func testRandomizedQueueKeepsReviewsBeforeNewWordsAndSameMembership() throws {
+    func testRandomizedQueueShufflesTheCompleteCandidatePoolOnce() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
@@ -192,15 +266,76 @@ final class StudyQueueServiceTests: XCTestCase {
         context.insert(newWord)
         try context.save()
 
-        let session = try service.buildSession(
+        var shuffleCallCount = 0
+        let deterministicService = StudyQueueService(calendar: calendar) { items in
+            shuffleCallCount += 1
+            return items.reversed()
+        }
+        let session = try deterministicService.buildSession(
             in: context,
             now: now,
-            dailyNewWordLimit: 20,
             randomizesQueue: true
         )
 
         XCTAssertEqual(Set(session.items.map(\.id)), Set([reviewWord.id, newWord.id]))
-        XCTAssertEqual(session.items.map(\.kind), [.dueReview, .newWord])
+        XCTAssertEqual(session.items.map(\.kind), [.newWord, .dueReview])
+        XCTAssertEqual(session.items.map(\.id), [newWord.id, reviewWord.id])
+        XCTAssertEqual(shuffleCallCount, 1)
+    }
+
+    func testConsecutiveGroupsSampleFromTheWholeRemainingCandidatePool() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = makeDate(year: 2026, month: 6, day: 16, hour: 9)
+
+        for index in 0..<12 {
+            context.insert(makeWord(
+                "新词\(index)",
+                state: .new,
+                dueAt: now,
+                createdAt: addingMinutes(index, to: now)
+            ))
+        }
+        try context.save()
+
+        let randomizedOrder = [11, 4, 8, 10, 2, 6, 9, 1, 7, 3, 5, 0]
+        let priorityByExpression = Dictionary(
+            uniqueKeysWithValues: randomizedOrder.enumerated().map { offset, index in
+                ("新词\(index)", offset)
+            }
+        )
+        var shuffledPoolSizes: [Int] = []
+        let deterministicService = StudyQueueService(calendar: calendar) { items in
+            shuffledPoolSizes.append(items.count)
+            return items.sorted {
+                priorityByExpression[$0.word.japanese, default: .max]
+                    < priorityByExpression[$1.word.japanese, default: .max]
+            }
+        }
+
+        let firstGroup = try deterministicService.buildSession(
+            in: context,
+            mode: .newWordsOnly,
+            now: now,
+            studyGroupNewWordCount: 3
+        )
+        XCTAssertEqual(firstGroup.items.map { $0.word.japanese }, ["新词11", "新词4", "新词8"])
+
+        for item in firstGroup.items {
+            item.word.progress?.state = .review
+            item.word.progress?.dueAt = addingDays(2, to: now)
+        }
+        try context.save()
+
+        let secondGroup = try deterministicService.buildSession(
+            in: context,
+            mode: .newWordsOnly,
+            now: now,
+            studyGroupNewWordCount: 3
+        )
+        XCTAssertEqual(secondGroup.items.map { $0.word.japanese }, ["新词10", "新词2", "新词6"])
+        XCTAssertTrue(Set(firstGroup.items.map(\.id)).isDisjoint(with: Set(secondGroup.items.map(\.id))))
+        XCTAssertEqual(shuffledPoolSizes, [12, 9])
     }
 
     func testEmptyQueueReturnsCompletedStatus() throws {
@@ -212,7 +347,7 @@ final class StudyQueueServiceTests: XCTestCase {
         context.insert(makeWord("暂停", state: .suspended, dueAt: now, createdAt: addingDays(-1, to: now)))
         try context.save()
 
-        let session = try service.buildSession(in: context, now: now, dailyNewWordLimit: 20)
+        let session = try service.buildSession(in: context, now: now)
 
         XCTAssertTrue(session.items.isEmpty)
         XCTAssertTrue(session.isCompleted)
@@ -240,8 +375,7 @@ final class StudyQueueServiceTests: XCTestCase {
             in: context,
             wordBook: targetBook,
             mode: .newWordsOnly,
-            now: now,
-            dailyNewWordLimit: 20
+            now: now
         )
 
         XCTAssertEqual(session.items.map { $0.word.japanese }, ["学生"])
@@ -271,8 +405,7 @@ final class StudyQueueServiceTests: XCTestCase {
             in: context,
             wordBook: targetBook,
             mode: .dueReviewsOnly,
-            now: now,
-            dailyNewWordLimit: 20
+            now: now
         )
 
         XCTAssertEqual(session.items.map { $0.word.japanese }, ["復習"])

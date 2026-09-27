@@ -1,0 +1,47 @@
+wordBook,expression,reading,sourceTerm,sourceLanguage,isWasei,isPartial
+N5,いくら,いくら,ikra,rus,false,false
+N5,ボールペン,ボールペン,ball pen,eng,true,false
+N5,ラーメン,ラーメン,Rahmen,ger,false,false
+N4,天ぷら,てんぷら,tempero,por,false,false
+N4,アルバイト,アルバイト,Arbeit,ger,false,false
+N4,オートバイ,オートバイ,auto-bi(cycle),eng,true,false
+N4,コンピューター,コンピューター,computer,eng,false,false
+N3,マンション,マンション,mansion,eng,false,false
+N3,メールアドレス,メールアドレス,mail address,eng,false,false
+N3,エネルギー,エネルギー,Energie,ger,false,false
+N3,オリンピック,オリンピック,Olympic,eng,false,false
+N3,ガソリンスタンド,ガソリンスタンド,gasoline stand,eng,true,false
+N3,キャンセル,キャンセル,cancel,eng,false,false
+N3,サラリーマン,サラリーマン,salaryman,eng,true,false
+N3,テーマ,テーマ,Thema,ger,false,false
+N3,ピーマン,ピーマン,piment,fre,false,false
+N3,アレルギー,アレルギー,Allergie,ger,false,false
+N3,ファスナー,ファスナー,fastener,eng,false,false
+N3,アンケート,アンケート,enquête,fre,false,false
+N3,リュックサック,リュックサック,Rucksack,ger,false,false
+N2,ビール,ビール,bier,dut,false,false
+N2,コンセント,コンセント,concent(ric plug),eng,true,false
+N2,テクニック,テクニック,technic,eng,false,false
+N2,マイペース,マイペース,my pace,eng,true,false
+N2,オルガン,オルガン,órgão,por,false,false
+N2,キャッチボール,キャッチボール,catch ball,eng,true,false
+N2,アレンジ,アレンジ,arrange,eng,false,false
+N2,タレント,タレント,talent,eng,false,false
+N2,ナイター,ナイター,nighter,eng,true,false
+N2,コンクール,コンクール,concours,fre,false,false
+N2,ショーウインドー,ショーウインドー,show window,eng,true,false
+N2,セロテープ,セロテープ,cellotape,eng,false,false
+N2,ノルマ,ノルマ,norma,rus,false,false
+N2,グルメ,グルメ,gourmet,fre,false,false
+N2,リフォーム,リフォーム,reform,eng,false,false
+N2,ピアス,ピアス,pierce,eng,false,false
+N2,ライトアップ,ライトアップ,light up,eng,false,false
+N1,ベビーカー,ベビーカー,baby car,eng,true,false
+N1,ルーズ,ルーズ,loose,eng,false,false
+N1,エリート,エリート,élite,fre,false,false
+N1,デビュー,デビュー,début,fre,false,false
+N1,ピント,ピント,brandpunt,dut,false,false
+N1,リストアップ,リストアップ,list up,eng,true,false
+N1,ボンベ,ボンベ,Bombe,ger,false,false
+N1,イデオロギー,イデオロギー,Ideologie,ger,false,false
+N1,ノスタルジー,ノスタルジー,nostalgie,fre,false,false

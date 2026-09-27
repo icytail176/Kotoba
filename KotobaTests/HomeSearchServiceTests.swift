@@ -7,10 +7,11 @@
 
 import SwiftData
 import XCTest
+@testable import Kotoba
 
 @MainActor
 final class HomeSearchServiceTests: XCTestCase {
-    func testSearchCanBeScopedToCurrentWordBook() throws {
+    func testSearchAlwaysIncludesAllWordBooksAndKeepsDuplicatesSeparate() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let currentBook = WordBook(name: "当前")
@@ -27,11 +28,11 @@ final class HomeSearchServiceTests: XCTestCase {
         let suggestions = try HomeSearchService().suggestions(
             in: context,
             query: "先生",
-            scope: .currentWordBook,
             currentWordBookID: currentBook.id
         )
 
-        XCTAssertEqual(suggestions.map(\.wordID), [currentWord.id])
+        XCTAssertEqual(suggestions.map(\.wordID), [currentWord.id, otherWord.id])
+        XCTAssertEqual(suggestions.map(\.wordBookName), ["当前", "其他"])
     }
 
     func testSearchRanksExpressionExactBeforeMeaningMatch() throws {
@@ -49,7 +50,6 @@ final class HomeSearchServiceTests: XCTestCase {
         let suggestions = try HomeSearchService().suggestions(
             in: context,
             query: "学校",
-            scope: .allWordBooks,
             currentWordBookID: nil
         )
 
