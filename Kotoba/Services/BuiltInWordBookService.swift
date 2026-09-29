@@ -36,7 +36,7 @@ struct BuiltInWordBookDefinition: Equatable, Sendable {
     ]
 }
 
-struct BuiltInWordBookLoadResult: Equatable {
+struct BuiltInWordBookLoadResult: Equatable, Sendable {
     let level: String
     let displayName: String
     let wordCount: Int
@@ -246,7 +246,6 @@ struct BuiltInWordBookService {
             }
 
             let needsIntegrityRepair = existingCounts == nil
-            let repairsReadingNormalizationDuplicates = storedSeedVersion == 2 || storedSeedVersion < Self.builtInVocabularyVersion
             let appliesConjugationAuditFieldPatch = storedSeedVersion == 4 && !needsIntegrityRepair
 
             #if DEBUG
@@ -254,8 +253,7 @@ struct BuiltInWordBookService {
                 "[BuiltInWordBook] Seed status:",
                 "storedVersion=\(storedSeedVersion)",
                 "targetVersion=\(Self.builtInVocabularyVersion)",
-                "needsIntegrityRepair=\(needsIntegrityRepair)",
-                "repairsReadingNormalizationDuplicates=\(repairsReadingNormalizationDuplicates)"
+                "needsIntegrityRepair=\(needsIntegrityRepair)"
             )
             #endif
 
@@ -282,8 +280,7 @@ struct BuiltInWordBookService {
                                 existingBook,
                                 from: rows,
                                 in: context,
-                                now: now,
-                                repairsReadingNormalizationDuplicates: repairsReadingNormalizationDuplicates
+                                now: now
                             )
                         }
                         existingBook.updatedAt = now
@@ -326,9 +323,11 @@ struct BuiltInWordBookService {
 
             try measurePhase("final integrity validation") {
                 let savedBooks = try context.fetch(FetchDescriptor<WordBook>())
-                guard try builtInWordCounts(in: context, books: savedBooks) != nil else {
-                    throw BuiltInWordBookError.incompleteSeed
-                }
+                try validateFinalIntegrity(
+                    in: context,
+                    books: savedBooks,
+                    parsedBooks: parsedBooks
+                )
             }
             userDefaults.set(Self.builtInVocabularyVersion, forKey: AppSettings.builtInWordBookSeedVersionKey)
 
@@ -350,7 +349,15 @@ struct BuiltInWordBookService {
         var counts: [String: Int] = [:]
 
         for definition in definitions {
-            guard let book = books.first(where: { $0.isBuiltIn && $0.name == definition.displayName }) else {
+            let matchingBooks = books.filter { $0.isBuiltIn && $0.name == definition.displayName }
+            guard matchingBooks.count == 1, let book = matchingBooks.first else {
+                logIntegrityFailure(
+                    phase: "fast-path",
+                    level: definition.level,
+                    expected: definition.expectedWordCount,
+                    actual: nil,
+                    reason: "matchingBookCount=\(matchingBooks.count)"
+                )
                 return nil
             }
             let bookID = book.id
@@ -359,9 +366,27 @@ struct BuiltInWordBookService {
             })
             let actualCount = try context.fetchCount(descriptor)
             if let expectedWordCount = definition.expectedWordCount {
-                guard actualCount == expectedWordCount else { return nil }
+                guard actualCount == expectedWordCount else {
+                    logIntegrityFailure(
+                        phase: "fast-path",
+                        level: definition.level,
+                        expected: expectedWordCount,
+                        actual: actualCount,
+                        reason: "activeCountMismatch"
+                    )
+                    return nil
+                }
             } else {
-                guard actualCount > 0 else { return nil }
+                guard actualCount > 0 else {
+                    logIntegrityFailure(
+                        phase: "fast-path",
+                        level: definition.level,
+                        expected: nil,
+                        actual: actualCount,
+                        reason: "emptyBuiltInBook"
+                    )
+                    return nil
+                }
             }
             counts[definition.level] = actualCount
         }
@@ -391,6 +416,7 @@ struct BuiltInWordBookService {
 
         try measurePhase("CSV validation and identity keys") {
             var vocabularyKeys = Set<VocabularyWordImportKey>()
+            var equivalentVocabularyKeys = Set<VocabularyWordImportKey>()
             for record in table.rows {
                 guard record.fields.count == Self.requiredHeaders.count else {
                     throw BuiltInWordBookError.invalidColumnCount(
@@ -432,6 +458,13 @@ struct BuiltInWordBookService {
 
                 let key = VocabularyWordImportKey(expression: record.fields[0], reading: record.fields[1])
                 guard vocabularyKeys.insert(key).inserted else {
+                    throw BuiltInWordBookError.duplicateVocabulary(fileName: definition.fileName, line: record.lineNumber)
+                }
+                let equivalentKey = equivalentVocabularyKey(
+                    expression: record.fields[0],
+                    reading: record.fields[1]
+                )
+                guard equivalentVocabularyKeys.insert(equivalentKey).inserted else {
                     throw BuiltInWordBookError.duplicateVocabulary(fileName: definition.fileName, line: record.lineNumber)
                 }
 
@@ -568,7 +601,8 @@ struct BuiltInWordBookService {
         var counts: [String: Int] = [:]
 
         for definition in definitions {
-            guard let book = books.first(where: { $0.isBuiltIn && $0.name == definition.displayName }) else {
+            let matchingBooks = books.filter { $0.isBuiltIn && $0.name == definition.displayName }
+            guard matchingBooks.count == 1, let book = matchingBooks.first else {
                 return nil
             }
 
@@ -586,6 +620,78 @@ struct BuiltInWordBookService {
         }
 
         return counts
+    }
+
+    private func validateFinalIntegrity(
+        in context: ModelContext,
+        books: [WordBook],
+        parsedBooks: [(BuiltInWordBookDefinition, [CSVRecord])]
+    ) throws {
+        for (definition, rows) in parsedBooks {
+            let matchingBooks = books.filter { $0.isBuiltIn && $0.name == definition.displayName }
+            guard matchingBooks.count == 1, let book = matchingBooks.first else {
+                logIntegrityFailure(
+                    phase: "final",
+                    level: definition.level,
+                    expected: rows.count,
+                    actual: nil,
+                    reason: "matchingBookCount=\(matchingBooks.count)"
+                )
+                throw BuiltInWordBookError.incompleteSeed
+            }
+
+            let bookID = book.id
+            let descriptor = FetchDescriptor<VocabularyWord>(predicate: #Predicate { word in
+                word.wordBook?.id == bookID && !word.isArchived
+            })
+            let activeWords = try context.fetch(descriptor)
+            let expectedKeys = rows.map {
+                VocabularyWordImportKey(expression: $0.fields[0], reading: $0.fields[1])
+            }
+            let actualKeys = activeWords.map {
+                VocabularyWordImportKey(expression: $0.japanese, reading: $0.kana)
+            }
+            let expectedCounts = Dictionary(grouping: expectedKeys, by: { $0 }).mapValues(\.count)
+            let actualCounts = Dictionary(grouping: actualKeys, by: { $0 }).mapValues(\.count)
+
+            guard expectedCounts == actualCounts else {
+                let missingCount = expectedCounts.reduce(into: 0) { total, entry in
+                    total += max(0, entry.value - actualCounts[entry.key, default: 0])
+                }
+                let unexpectedCount = actualCounts.reduce(into: 0) { total, entry in
+                    total += max(0, entry.value - expectedCounts[entry.key, default: 0])
+                }
+                logIntegrityFailure(
+                    phase: "final",
+                    level: definition.level,
+                    expected: expectedKeys.count,
+                    actual: actualKeys.count,
+                    reason: "identityCoverageMismatch missing=\(missingCount) unexpected=\(unexpectedCount)"
+                )
+                throw BuiltInWordBookError.incompleteSeed
+            }
+        }
+    }
+
+    private func logIntegrityFailure(
+        phase: String,
+        level: String,
+        expected: Int?,
+        actual: Int?,
+        reason: String
+    ) {
+        #if DEBUG
+        print(
+            "[BuiltInWordBook] Integrity failure:",
+            "phase=\(phase)",
+            "seedVersion=\(userDefaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey))",
+            "targetVersion=\(Self.builtInVocabularyVersion)",
+            "book=\(level)",
+            "expected=\(expected.map(String.init) ?? "nil")",
+            "actual=\(actual.map(String.init) ?? "nil")",
+            "reason=\(reason)"
+        )
+        #endif
     }
 
     private func loadResults(
@@ -658,49 +764,45 @@ struct BuiltInWordBookService {
         _ wordBook: WordBook,
         from rows: [CSVRecord],
         in context: ModelContext,
-        now: Date,
-        repairsReadingNormalizationDuplicates: Bool
+        now: Date
     ) -> Int {
-        var existingWords: [VocabularyWordImportKey: VocabularyWord] = [:]
-        var equivalentWords: [VocabularyWordImportKey: VocabularyWord] = [:]
-        for word in wordBook.words {
-            let key = VocabularyWordImportKey(expression: word.japanese, reading: word.kana)
-            if existingWords[key] == nil {
-                existingWords[key] = word
-            }
-
-            let equivalentKey = equivalentVocabularyKey(expression: word.japanese, reading: word.kana)
-            if equivalentWords[equivalentKey] == nil {
-                equivalentWords[equivalentKey] = word
-            }
+        let originalWords = wordBook.words
+        let wordsByEquivalentKey = Dictionary(grouping: originalWords) { word in
+            equivalentVocabularyKey(expression: word.japanese, reading: word.kana)
         }
-
-        let sourceKeys = Set(rows.map { VocabularyWordImportKey(expression: $0.fields[0], reading: $0.fields[1]) })
-        let sourceEquivalentKeys = Set(rows.map { equivalentVocabularyKey(expression: $0.fields[0], reading: $0.fields[1]) })
+        var representedWordIDs = Set<UUID>()
         var importedCount = 0
+
         for row in rows {
             let key = VocabularyWordImportKey(expression: row.fields[0], reading: row.fields[1])
-            if let existingWord = existingWords[key] {
-                apply(row, to: existingWord, now: now)
-                existingWord.isArchived = false
-            } else if let equivalentWord = equivalentWords[equivalentVocabularyKey(expression: row.fields[0], reading: row.fields[1])] {
-                apply(row, to: equivalentWord, now: now)
-                equivalentWord.isArchived = false
-            } else {
+            let equivalentKey = equivalentVocabularyKey(expression: row.fields[0], reading: row.fields[1])
+            let candidates = wordsByEquivalentKey[equivalentKey, default: []]
+
+            guard let keeper = preferredKeeper(from: candidates, resourceKey: key) else {
                 let word = makeWord(from: row, wordBook: wordBook, now: now)
                 context.insert(word)
+                representedWordIDs.insert(word.id)
                 importedCount += 1
+                continue
+            }
+
+            apply(row, to: keeper, now: now)
+            keeper.isArchived = false
+
+            for word in candidates {
+                representedWordIDs.insert(word.id)
+                guard word.id != keeper.id else { continue }
+
+                if isSafeToDeleteEquivalentDuplicate(word) {
+                    context.delete(word)
+                } else {
+                    word.isArchived = true
+                    word.updatedAt = now
+                }
             }
         }
 
-        if repairsReadingNormalizationDuplicates {
-            removeSafeEquivalentDuplicates(in: wordBook, sourceRows: rows, context: context)
-        }
-
-        for word in wordBook.words {
-            let exactKey = VocabularyWordImportKey(expression: word.japanese, reading: word.kana)
-            let equivalentKey = equivalentVocabularyKey(expression: word.japanese, reading: word.kana)
-            guard !sourceKeys.contains(exactKey), !sourceEquivalentKeys.contains(equivalentKey) else { continue }
+        for word in originalWords where !representedWordIDs.contains(word.id) {
             if isSafeToDeleteStaleBuiltInWord(word) {
                 context.delete(word)
             } else {
@@ -712,6 +814,54 @@ struct BuiltInWordBookService {
         return importedCount
     }
 
+    private func preferredKeeper(
+        from candidates: [VocabularyWord],
+        resourceKey: VocabularyWordImportKey
+    ) -> VocabularyWord? {
+        let activeCandidates = candidates.filter { !$0.isArchived }
+        let pool = activeCandidates.isEmpty ? candidates : activeCandidates
+
+        return pool.sorted { lhs, rhs in
+            let lhsUserDataRank = userDataRank(for: lhs)
+            let rhsUserDataRank = userDataRank(for: rhs)
+            if lhsUserDataRank != rhsUserDataRank {
+                return lhsUserDataRank > rhsUserDataRank
+            }
+
+            let lhsIsExact = VocabularyWordImportKey(expression: lhs.japanese, reading: lhs.kana) == resourceKey
+            let rhsIsExact = VocabularyWordImportKey(expression: rhs.japanese, reading: rhs.kana) == resourceKey
+            if lhsIsExact != rhsIsExact {
+                return lhsIsExact
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }.first
+    }
+
+    private func userDataRank(for word: VocabularyWord) -> Int {
+        if !word.reviewLogs.isEmpty {
+            return 4
+        }
+        if let progress = word.progress,
+           (progress.state != .new
+                || progress.intervalDays != 0
+                || progress.reviewCount != 0
+                || progress.lapseCount != 0
+                || progress.lastReviewedAt != nil) {
+            return 3
+        }
+        if word.isFavorite {
+            return 2
+        }
+        if word.progress == nil {
+            return 1
+        }
+        return 0
+    }
+
     private func isSafeToDeleteStaleBuiltInWord(_ word: VocabularyWord) -> Bool {
         guard !word.isFavorite, word.reviewLogs.isEmpty, let progress = word.progress else { return false }
         return progress.state == .new
@@ -721,41 +871,9 @@ struct BuiltInWordBookService {
             && progress.lastReviewedAt == nil
     }
 
-    private func removeSafeEquivalentDuplicates(
-        in wordBook: WordBook,
-        sourceRows: [CSVRecord],
-        context: ModelContext
-    ) {
-        let sourceReadings = Dictionary(
-            uniqueKeysWithValues: sourceRows.map { row in
-                (equivalentVocabularyKey(expression: row.fields[0], reading: row.fields[1]), row.fields[1])
-            }
-        )
-        let groups = Dictionary(grouping: wordBook.words, by: { word in
-            equivalentVocabularyKey(expression: word.japanese, reading: word.kana)
-        })
-
-        for (key, words) in groups where words.count > 1 {
-            let preferredReading = sourceReadings[key]
-            let keeper = words.first(where: { $0.kana == preferredReading })
-                ?? words.first(where: { !isSafeToDeleteEquivalentDuplicate($0) })
-                ?? words.min(by: { $0.createdAt < $1.createdAt })
-
-            guard let keeper else {
-                continue
-            }
-
-            for word in words where word.id != keeper.id {
-                guard isSafeToDeleteEquivalentDuplicate(word) else {
-                    continue
-                }
-                context.delete(word)
-            }
-        }
-    }
-
     private func isSafeToDeleteEquivalentDuplicate(_ word: VocabularyWord) -> Bool {
-        guard word.reviewLogs.isEmpty,
+        guard !word.isFavorite,
+              word.reviewLogs.isEmpty,
               let progress = word.progress else {
             return false
         }

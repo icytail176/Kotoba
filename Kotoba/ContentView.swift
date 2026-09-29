@@ -43,7 +43,7 @@ struct ContentView: View {
             KeyboardShortcutHelpView()
         }
         .task {
-            loadInitialWordBooks()
+            await loadInitialWordBooks()
         }
         .alert(
             "数据加载失败",
@@ -84,12 +84,13 @@ struct ContentView: View {
         }
     }
 
-    private func loadInitialWordBooks() {
+    private func loadInitialWordBooks() async {
         do {
-            try PerformanceTrace.measure("Initial data load") {
-                try BuiltInWordBookService().loadIfNeeded(in: modelContext)
+            _ = try await BuiltInWordBookInitializationCoordinator.shared.loadIfNeeded(in: modelContext)
+            try PerformanceTrace.measure("Legacy word migration") {
                 try WordBookService().migrateLegacyWordsIfNeeded(in: modelContext)
             }
+            migrationErrorMessage = nil
         } catch {
             #if DEBUG
             print("[Kotoba] Initial wordbook loading failed:", error.localizedDescription)

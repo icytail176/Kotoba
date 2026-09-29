@@ -640,15 +640,39 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         XCTAssertEqual(words.first?.id, originalWord.id)
     }
 
-    func testEquivalentDuplicateWithReviewHistoryIsPreserved() throws {
+    func testN5MarkerDuplicateRepairKeepsLearnedObjectAndIsIdempotent() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
-        let definition = BuiltInWordBookDefinition(level: "N5", displayName: "JLPT N5", fileName: "test.csv")
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: "test.csv",
+            expectedWordCount: 1
+        )
         let book = WordBook(name: definition.displayName, isBuiltIn: true)
-        let originalWord = VocabularyWord(japanese: "テスト", kana: "テスト", chineseMeaning: "测试", jlptLevel: "N5", wordBook: book)
+        let originalWord = VocabularyWord(
+            japanese: "口",
+            kana: "くち",
+            chineseMeaning: "嘴；言语；出入口；……口；股，份",
+            jlptLevel: "N5",
+            wordBook: book
+        )
         originalWord.progress = LearningProgress(state: .new, word: originalWord)
-        let protectedDuplicate = VocabularyWord(japanese: "テスト", kana: "てすと", chineseMeaning: "测试", jlptLevel: "N5", wordBook: book)
-        protectedDuplicate.progress = LearningProgress(state: .review, dueAt: Date(), word: protectedDuplicate)
+        let dueAt = Date(timeIntervalSinceReferenceDate: 900_000)
+        let protectedDuplicate = VocabularyWord(
+            japanese: "〜口",
+            kana: "〜くち",
+            chineseMeaning: "……口；股，份",
+            jlptLevel: "N5",
+            wordBook: book
+        )
+        protectedDuplicate.progress = LearningProgress(
+            state: .review,
+            dueAt: dueAt,
+            intervalDays: 2,
+            reviewCount: 1,
+            word: protectedDuplicate
+        )
         protectedDuplicate.reviewLogs = [
             ReviewLog(
                 rating: .good,
@@ -664,21 +688,127 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         context.insert(originalWord)
         context.insert(protectedDuplicate)
         try context.save()
+        let learnedWordID = protectedDuplicate.id
+        let learnedProgressID = try XCTUnwrap(protectedDuplicate.progress?.id)
+        let reviewLogID = try XCTUnwrap(protectedDuplicate.reviewLogs.first?.id)
 
         let userDefaults = try makeSeedDefaults()
-        userDefaults.set(2, forKey: AppSettings.builtInWordBookSeedVersionKey)
+        userDefaults.set(5, forKey: AppSettings.builtInWordBookSeedVersionKey)
         let service = BuiltInWordBookService(
             definitions: [definition],
             dataProvider: { _ in
-                Data("expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\nテスト,テスト,测试,名词,,,N5,外来语\n".utf8)
+                Data("expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\n口,くち,嘴；言语；出入口；……口；股，份,名词,,,N5,基础\n".utf8)
             },
             userDefaults: userDefaults
         )
+        for _ in 0..<3 {
+            _ = try service.loadIfNeeded(in: context)
+        }
+
+        let words = try context.fetch(FetchDescriptor<VocabularyWord>())
+        let repaired = try XCTUnwrap(words.first)
+        XCTAssertEqual(words.count, 1)
+        XCTAssertEqual(repaired.id, learnedWordID)
+        XCTAssertEqual(repaired.japanese, "口")
+        XCTAssertEqual(repaired.kana, "くち")
+        XCTAssertFalse(repaired.isArchived)
+        XCTAssertEqual(repaired.progress?.id, learnedProgressID)
+        XCTAssertEqual(repaired.progress?.state, .review)
+        XCTAssertEqual(repaired.progress?.dueAt, dueAt)
+        XCTAssertEqual(repaired.progress?.intervalDays, 2)
+        XCTAssertEqual(repaired.progress?.reviewCount, 1)
+        XCTAssertEqual(repaired.reviewLogs.map(\.id), [reviewLogID])
+        XCTAssertEqual(
+            userDefaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey),
+            BuiltInWordBookService.builtInVocabularyVersion
+        )
+    }
+
+    func testTwoLearnedEquivalentDuplicatesKeepOneActiveAndArchiveTheOther() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: "test.csv",
+            expectedWordCount: 1
+        )
+        let book = WordBook(name: definition.displayName, isBuiltIn: true)
+        let exact = makeReviewedDuplicate(
+            expression: "口",
+            reading: "くち",
+            book: book,
+            reviewedAt: Date(timeIntervalSinceReferenceDate: 100)
+        )
+        let equivalent = makeReviewedDuplicate(
+            expression: "〜口",
+            reading: "〜くち",
+            book: book,
+            reviewedAt: Date(timeIntervalSinceReferenceDate: 200)
+        )
+        context.insert(book)
+        context.insert(exact)
+        context.insert(equivalent)
+        try context.save()
+
+        let service = BuiltInWordBookService(
+            definitions: [definition],
+            dataProvider: { _ in
+                Data("expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\n口,くち,嘴,名词,,,N5,基础\n".utf8)
+            },
+            userDefaults: try makeSeedDefaults()
+        )
+        _ = try service.loadIfNeeded(in: context)
         _ = try service.loadIfNeeded(in: context)
 
         let words = try context.fetch(FetchDescriptor<VocabularyWord>())
         XCTAssertEqual(words.count, 2)
-        XCTAssertEqual(words.first(where: { $0.id == protectedDuplicate.id })?.reviewLogs.count, 1)
+        XCTAssertFalse(try XCTUnwrap(words.first(where: { $0.id == exact.id })).isArchived)
+        XCTAssertTrue(try XCTUnwrap(words.first(where: { $0.id == equivalent.id })).isArchived)
+        XCTAssertEqual(words.flatMap(\.reviewLogs).count, 2)
+        XCTAssertEqual(words.filter { !$0.isArchived }.map(\.id), [exact.id])
+    }
+
+    func testFavoriteEquivalentDuplicateIsNeverDeleted() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: "test.csv",
+            expectedWordCount: 1
+        )
+        let book = WordBook(name: definition.displayName, isBuiltIn: true)
+        let exact = VocabularyWord(japanese: "口", kana: "くち", chineseMeaning: "嘴", jlptLevel: "N5", wordBook: book)
+        exact.progress = LearningProgress(state: .new, word: exact)
+        let favorite = VocabularyWord(
+            japanese: "〜口",
+            kana: "〜くち",
+            chineseMeaning: "……口",
+            jlptLevel: "N5",
+            isFavorite: true,
+            wordBook: book
+        )
+        favorite.progress = LearningProgress(state: .new, word: favorite)
+        context.insert(book)
+        context.insert(exact)
+        context.insert(favorite)
+        try context.save()
+
+        let service = BuiltInWordBookService(
+            definitions: [definition],
+            dataProvider: { _ in
+                Data("expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\n口,くち,嘴,名词,,,N5,基础\n".utf8)
+            },
+            userDefaults: try makeSeedDefaults()
+        )
+        _ = try service.loadIfNeeded(in: context)
+
+        let words = try context.fetch(FetchDescriptor<VocabularyWord>())
+        XCTAssertEqual(words.count, 1)
+        XCTAssertEqual(words.first?.id, favorite.id)
+        XCTAssertTrue(words.first?.isFavorite == true)
+        XCTAssertEqual(words.first?.japanese, "口")
     }
 
     func testVersionFourConjugationPatchChangesOnlyConfirmedFieldAndPreservesProgress() throws {
@@ -772,6 +902,41 @@ final class BuiltInWordBookServiceTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("Kotoba/Resources")
             .appendingPathComponent(definition.fileName)
+    }
+
+    private func makeReviewedDuplicate(
+        expression: String,
+        reading: String,
+        book: WordBook,
+        reviewedAt: Date
+    ) -> VocabularyWord {
+        let word = VocabularyWord(
+            japanese: expression,
+            kana: reading,
+            chineseMeaning: "历史",
+            jlptLevel: "N5",
+            wordBook: book
+        )
+        word.progress = LearningProgress(
+            state: .review,
+            dueAt: reviewedAt.addingTimeInterval(2 * 86_400),
+            intervalDays: 2,
+            reviewCount: 1,
+            word: word
+        )
+        word.reviewLogs = [
+            ReviewLog(
+                reviewedAt: reviewedAt,
+                rating: .good,
+                previousState: .new,
+                nextState: .review,
+                previousIntervalDays: 0,
+                nextIntervalDays: 2,
+                scheduledDueAt: reviewedAt.addingTimeInterval(2 * 86_400),
+                word: word
+            )
+        ]
+        return word
     }
 
     private func makeSeedDefaults() throws -> UserDefaults {

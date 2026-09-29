@@ -150,6 +150,70 @@ final class HomeDashboardServiceTests: XCTestCase {
         XCTAssertEqual(summary.dueReviewCount, 1)
     }
 
+    func testArchivedBuiltInWordsAreExcludedFromHomeQueueAndSearch() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = Date(timeIntervalSinceReferenceDate: 900_000_000)
+        let book = WordBook(name: "JLPT N5", isBuiltIn: true)
+        let activeNew = makeWord(
+            "学生",
+            exampleJapanese: "学生です。",
+            exampleChinese: "是学生。",
+            wordBook: book
+        )
+        let activeReview = makeWord(
+            "復習",
+            exampleJapanese: "復習します。",
+            exampleChinese: "复习。",
+            wordBook: book
+        )
+        activeReview.progress?.state = .review
+        activeReview.progress?.dueAt = now.addingTimeInterval(-60)
+        let archivedNew = makeWord(
+            "归档新词",
+            exampleJapanese: "例句。",
+            exampleChinese: "例句。",
+            wordBook: book
+        )
+        archivedNew.isArchived = true
+        let archivedReview = makeWord(
+            "归档复习词",
+            exampleJapanese: "例句。",
+            exampleChinese: "例句。",
+            wordBook: book
+        )
+        archivedReview.isArchived = true
+        archivedReview.progress?.state = .review
+        archivedReview.progress?.dueAt = now.addingTimeInterval(-60)
+
+        context.insert(book)
+        [activeNew, activeReview, archivedNew, archivedReview].forEach { context.insert($0) }
+        try context.save()
+
+        let dashboard = try HomeDashboardService().makeSnapshot(
+            in: context,
+            selectedIDString: book.id.uuidString,
+            now: now
+        ).snapshot
+        let queue = try StudyQueueService().buildSession(
+            in: context,
+            wordBook: book,
+            now: now,
+            randomizesQueue: false
+        )
+        let archivedSearch = try HomeSearchService().suggestions(
+            in: context,
+            query: "归档",
+            currentWordBookID: book.id
+        )
+
+        XCTAssertEqual(dashboard.totalWordCount, 2)
+        XCTAssertEqual(dashboard.remainingNewWordCount, 1)
+        XCTAssertEqual(dashboard.dueReviewCount, 1)
+        XCTAssertEqual(Set(queue.items.map(\.id)), Set([activeNew.id, activeReview.id]))
+        XCTAssertTrue(archivedSearch.isEmpty)
+    }
+
     private func makeWord(
         _ expression: String,
         exampleJapanese: String,
