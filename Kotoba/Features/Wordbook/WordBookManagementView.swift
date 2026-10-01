@@ -249,8 +249,17 @@ struct WordBookManagementView: View {
                 spacing: 12
             ) {
                 BookMetricView(title: "总词数", value: summary.totalWordCount)
-                BookMetricView(title: "已学习", value: summary.learningWordCount + summary.reviewWordCount)
-                BookMetricView(title: "待复习", value: summary.dueReviewCount)
+                BookMetricView(title: "已标熟", value: summary.masteredWordCount)
+                BookMetricView(title: "未学习", value: summary.newWordCount)
+            }
+
+            WordbookProgressSummaryView(
+                summary: summary,
+                isLoading: viewModel.loadingSummaryIDs.contains(summary.id)
+            )
+
+            if wordBook.isBuiltIn {
+                builtInAttribution
             }
 
             Text("词条预览")
@@ -283,6 +292,19 @@ struct WordBookManagementView: View {
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private var builtInAttribution: some View {
+        let attribution = AppAttribution.builtInVocabulary
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("来源：\(attribution.fullName)")
+            Text(attribution.modificationNote)
+            Link("查看来源与许可", destination: attribution.url)
+                .accessibilityLabel("查看 JLPT 内置词书数据来源与许可")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .contain)
+    }
+
     private var previewFilters: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) { previewFilterPickers }
@@ -292,10 +314,9 @@ struct WordBookManagementView: View {
 
     @ViewBuilder
     private var previewFilterPickers: some View {
-        Picker("状态", selection: $viewModel.previewFilters.learningState) {
-            Text("全部").tag(WordbookFilterValue.all.rawValue)
-            ForEach(viewModel.selectedPreviewOptionSets.learningStates) { state in
-                Text(state.displayName).tag(state.rawValue)
+        Picker("状态", selection: $viewModel.previewFilters.status) {
+            ForEach(WordbookStatusFilter.allCases) { status in
+                Text(status.displayName).tag(status)
             }
         }
         Picker("词性", selection: $viewModel.previewFilters.partOfSpeech) {
@@ -494,7 +515,7 @@ private struct WordBookSummaryRow: View {
             }
             Text(isLoading
                  ? "统计中…"
-                 : "总词数 \(summary.totalWordCount) · 已学习 \(summary.learningWordCount + summary.reviewWordCount) · 待复习 \(summary.dueReviewCount)")
+                 : "总词数 \(summary.totalWordCount) · 已标熟 \(summary.masteredWordCount) · 未学习 \(summary.newWordCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -514,6 +535,8 @@ struct BookMetricView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) \(value)")
     }
 }
 

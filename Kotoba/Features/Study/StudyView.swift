@@ -44,6 +44,20 @@ struct StudyView: View {
                     didConfirmCompletion = true
                     onSessionCompleted()
                 }
+            } else if viewModel.hasRecoverableRatingSaveFailure {
+                VStack(spacing: 16) {
+                    EmptyStateView(
+                        systemImage: "exclamationmark.triangle",
+                        title: "评价保存失败",
+                        message: viewModel.errorMessage ?? "评价尚未保存，可以重试或返回当前卡片。"
+                    )
+                    HStack {
+                        Button("重试保存") { viewModel.retrySavingRating(context: modelContext) }
+                            .buttonStyle(.borderedProminent)
+                        Button("返回卡片") { viewModel.cancelRatingSaveFailure() }
+                            .buttonStyle(.bordered)
+                    }
+                }
             } else if viewModel.hasRecoverableSpellingSaveFailure {
                 VStack(spacing: 16) {
                     EmptyStateView(

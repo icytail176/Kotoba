@@ -18,8 +18,11 @@ final class HomeDashboardViewModel: ObservableObject {
         totalWordCount: 0,
         remainingNewWordCount: 0,
         dueReviewCount: 0,
+        reviewingWordCount: 0,
         masteredWordCount: 0,
+        reviewForecast: [],
         hasWordBooks: false,
+        isBuiltInWordBook: false,
         example: nil
     )
     @Published private(set) var wordBooks: [WordBook] = []
@@ -91,8 +94,11 @@ final class HomeDashboardViewModel: ObservableObject {
                     totalWordCount: snapshot.totalWordCount,
                     remainingNewWordCount: snapshot.remainingNewWordCount,
                     dueReviewCount: snapshot.dueReviewCount,
+                    reviewingWordCount: snapshot.reviewingWordCount,
                     masteredWordCount: snapshot.masteredWordCount,
+                    reviewForecast: snapshot.reviewForecast,
                     hasWordBooks: snapshot.hasWordBooks,
+                    isBuiltInWordBook: snapshot.isBuiltInWordBook,
                     example: dashboardService.randomExample(from: book.words.filter { !$0.isArchived })
                 )
                 errorMessage = nil

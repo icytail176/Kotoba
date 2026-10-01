@@ -79,6 +79,8 @@ struct ContentView: View {
             }
         case .statistics:
             StatisticsView()
+        case .kanaChart:
+            KanaChartView()
         case .settings:
             SettingsView()
         }

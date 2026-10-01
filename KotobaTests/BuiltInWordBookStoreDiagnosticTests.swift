@@ -37,7 +37,7 @@ final class BuiltInWordBookStoreDiagnosticTests: XCTestCase {
         let defaultsSuite = "BuiltInWordBookStoreDiagnosticTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
         defaults.removePersistentDomain(forName: defaultsSuite)
-        defaults.set(5, forKey: AppSettings.builtInWordBookSeedVersionKey)
+        defaults.set(7, forKey: AppSettings.builtInWordBookSeedVersionKey)
 
         let beforeWords = try context.fetch(FetchDescriptor<VocabularyWord>())
         let beforeSignatures = Dictionary(
@@ -70,7 +70,7 @@ final class BuiltInWordBookStoreDiagnosticTests: XCTestCase {
         }
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ReviewLog>()), beforeReviewLogCount)
         XCTAssertEqual(afterWords.filter(\.isFavorite).count, beforeFavoriteCount)
-        XCTAssertEqual(defaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey), 6)
+        XCTAssertEqual(defaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey), 8)
 
         let n5Book = try XCTUnwrap(
             try context.fetch(FetchDescriptor<WordBook>()).first { $0.name == "JLPT N5" && $0.isBuiltIn }
@@ -81,6 +81,7 @@ final class BuiltInWordBookStoreDiagnosticTests: XCTestCase {
         ).snapshot
         XCTAssertEqual(home.totalWordCount, 802)
         XCTAssertEqual(afterWords.filter { !$0.isArchived && $0.wordBook?.isBuiltIn == true }.count, 10_609)
+        XCTAssertEqual(afterWords.filter { !$0.isArchived && $0.wordBook?.isBuiltIn == true && $0.loanwordSourceTerm != nil }.count, 836)
         printHealth("after", context: context)
     }
 

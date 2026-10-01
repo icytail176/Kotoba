@@ -27,5 +27,8 @@ final class UIFormattingAndLayoutTests: XCTestCase {
         let items = KeyboardShortcutReference.sections.flatMap(\.items)
         XCTAssertTrue(items.contains { $0.action == "熟练" && $0.keys == "Delete / Backspace" })
         XCTAssertTrue(items.contains { $0.action.contains("假名提示") && $0.keys == "⌘⇧H" })
+        XCTAssertTrue(items.contains { $0.action == "退出本组" && $0.keys == "Escape" })
+        XCTAssertTrue(items.contains { $0.action == "返回首页" && $0.keys == "Enter" })
+        XCTAssertEqual(items.filter { $0.keys == "⌘⇧H" }.count, 1)
     }
 }

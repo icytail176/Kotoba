@@ -11,6 +11,109 @@ import XCTest
 
 @MainActor
 final class HomeDashboardServiceTests: XCTestCase {
+    func testDashboardStateLabelsUseReviewForReviewCountAndSuspendedForMasteredCount() throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let book = WordBook(name: "状态语义")
+        context.insert(book)
+
+        for (index, state) in LearningState.allCases.enumerated() {
+            let word = makeWord(
+                "状态\(index)",
+                exampleJapanese: "例句",
+                exampleChinese: "例句",
+                wordBook: book
+            )
+            word.progress?.state = state
+            if state == .suspended {
+                word.reviewLogs = [ReviewLog(
+                    rating: .good,
+                    previousState: .review,
+                    nextState: .suspended,
+                    previousIntervalDays: 60,
+                    nextIntervalDays: 0,
+                    scheduledDueAt: Date(),
+                    word: word
+                )]
+            }
+            context.insert(word)
+        }
+        try context.save()
+
+        let snapshot = try HomeDashboardService().makeSnapshot(
+            in: context,
+            selectedIDString: book.id.uuidString
+        ).snapshot
+
+        XCTAssertEqual(snapshot.totalWordCount, LearningState.allCases.count)
+        XCTAssertEqual(snapshot.remainingNewWordCount, 1)
+        XCTAssertEqual(snapshot.reviewingWordCount, 3)
+        XCTAssertEqual(snapshot.masteredWordCount, 1, "自动熟练的 suspended 词只计入已熟练")
+        XCTAssertEqual(snapshot.dueReviewCount, 3, "当前待复习只包含 StudyDuePolicy 判定为到期的 active learned words")
+    }
+
+    func testSevenDayForecastUsesCalendarDaysAcrossDSTAndExcludesIneligibleStates() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 3, day: 7, hour: 15
+        )))
+
+        func date(offset: Int, hour: Int = 9) throws -> Date {
+            let day = try XCTUnwrap(calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)))
+            return try XCTUnwrap(calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day))
+        }
+
+        func forecastWord(_ expression: String, state: LearningState, offset: Int, archived: Bool = false) throws -> VocabularyWord {
+            let word = VocabularyWord(japanese: expression, kana: expression, chineseMeaning: expression, jlptLevel: "N5")
+            word.isArchived = archived
+            word.progress = LearningProgress(state: state, dueAt: try date(offset: offset), word: word)
+            return word
+        }
+
+        let words = try [
+            forecastWord("逾期", state: .review, offset: -2),
+            forecastWord("今天", state: .learning, offset: 0, archived: false),
+            forecastWord("明天", state: .relearning, offset: 1),
+            forecastWord("后天", state: .review, offset: 2),
+            forecastWord("第六天", state: .review, offset: 6),
+            forecastWord("第七天", state: .review, offset: 7),
+            forecastWord("新词", state: .new, offset: 1),
+            forecastWord("熟练", state: .suspended, offset: 1),
+            forecastWord("归档", state: .review, offset: 1, archived: true)
+        ]
+
+        let forecast = HomeDashboardService.reviewForecast(words: words, now: now, calendar: calendar)
+
+        XCTAssertEqual(forecast.count, 7)
+        XCTAssertEqual(forecast.map(\.reviewCount), [2, 1, 1, 0, 0, 0, 1])
+        XCTAssertEqual(
+            calendar.dateComponents([.day], from: forecast[0].day, to: forecast[1].day).day,
+            1,
+            "DST 边界必须按 Calendar 自然日递增"
+        )
+    }
+
+    func testSevenDayForecastUsesOrdinaryCalendarWeek() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 9, day: 30, hour: 16
+        )))
+        let today = calendar.startOfDay(for: now)
+        let word = VocabularyWord(japanese: "予定", kana: "よてい", chineseMeaning: "预定", jlptLevel: "N4")
+        word.progress = LearningProgress(
+            state: .review,
+            dueAt: try XCTUnwrap(calendar.date(byAdding: .day, value: 4, to: today)),
+            word: word
+        )
+
+        let forecast = HomeDashboardService.reviewForecast(words: [word], now: now, calendar: calendar)
+
+        XCTAssertEqual(forecast.map(\.reviewCount), [0, 0, 0, 0, 1, 0, 0])
+        XCTAssertTrue(forecast.allSatisfy { calendar.startOfDay(for: $0.day) == $0.day })
+    }
+
     func testRandomExampleUsesOnlySelectedWordBookAndRequiresBothExamples() throws {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
@@ -212,6 +315,79 @@ final class HomeDashboardServiceTests: XCTestCase {
         XCTAssertEqual(dashboard.dueReviewCount, 1)
         XCTAssertEqual(Set(queue.items.map(\.id)), Set([activeNew.id, activeReview.id]))
         XCTAssertTrue(archivedSearch.isEmpty)
+    }
+
+    func testDashboardWordbookAndStudyStatisticsAreReadOnly() async throws {
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let now = Date(timeIntervalSinceReferenceDate: 900_000_000)
+        let book = WordBook(name: "只读统计")
+        let word = makeWord(
+            "確認",
+            exampleJapanese: "内容を確認します。",
+            exampleChinese: "确认内容。",
+            wordBook: book
+        )
+        word.progress?.state = .review
+        word.progress?.intervalDays = 12
+        word.progress?.reviewCount = 4
+        word.progress?.lapseCount = 1
+        word.progress?.dueAt = now.addingTimeInterval(86_400)
+        word.progress?.lastReviewedAt = now.addingTimeInterval(-86_400)
+        let log = ReviewLog(
+            reviewedAt: now.addingTimeInterval(-86_400),
+            rating: .good,
+            previousState: .learning,
+            nextState: .review,
+            previousIntervalDays: 0,
+            nextIntervalDays: 12,
+            scheduledDueAt: word.progress?.dueAt ?? now,
+            word: word
+        )
+        word.reviewLogs.append(log)
+        context.insert(book)
+        context.insert(word)
+        context.insert(log)
+        try context.save()
+
+        let progressID = try XCTUnwrap(word.progress?.id)
+        let originalDueAt = try XCTUnwrap(word.progress?.dueAt)
+        let originalUpdatedAt = word.progress?.updatedAt
+
+        _ = try HomeDashboardService().makeSnapshot(
+            in: context,
+            selectedIDString: book.id.uuidString,
+            now: now
+        )
+        _ = WordBookService().summary(for: book, selectedID: book.id, now: now)
+        let statisticsInput = try await StudyStatisticsService().makeSnapshot(in: container).input
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        _ = StudyStatisticsCalculator().calculate(
+            input: statisticsInput,
+            calendar: calendar,
+            now: now,
+            range: .sevenDays
+        )
+        _ = StudyStatisticsCalculator().calculate(
+            input: statisticsInput,
+            calendar: calendar,
+            now: now,
+            range: .thirtyDays
+        )
+
+        let progresses = try context.fetch(FetchDescriptor<LearningProgress>())
+        let logs = try context.fetch(FetchDescriptor<ReviewLog>())
+        XCTAssertEqual(progresses.count, 1)
+        XCTAssertEqual(progresses.first?.id, progressID)
+        XCTAssertEqual(progresses.first?.state, .review)
+        XCTAssertEqual(progresses.first?.intervalDays, 12)
+        XCTAssertEqual(progresses.first?.reviewCount, 4)
+        XCTAssertEqual(progresses.first?.lapseCount, 1)
+        XCTAssertEqual(progresses.first?.dueAt, originalDueAt)
+        XCTAssertEqual(progresses.first?.updatedAt, originalUpdatedAt)
+        XCTAssertEqual(logs.count, 1)
+        XCTAssertEqual(logs.first?.id, log.id)
     }
 
     private func makeWord(

@@ -37,7 +37,6 @@ struct WordbookView: View {
     @StateObject private var viewModel = WordbookViewModel()
     @StateObject private var importViewModel = VocabularyImportViewModel()
     @State private var isFileImporterPresented = false
-    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         PageScaffold(title: "单词本", subtitle: "管理本地保存的日语词汇。") {
@@ -46,7 +45,6 @@ struct WordbookView: View {
                     filters: $viewModel.filters,
                     optionSets: viewModel.optionSets,
                     isFiltering: viewModel.isFiltering,
-                    searchFieldFocus: $isSearchFieldFocused,
                     onClear: {
                         viewModel.clearFilters()
                     },
@@ -58,22 +56,25 @@ struct WordbookView: View {
                     }
                 )
 
+                WordbookProgressSummaryView(
+                    counts: viewModel.progressSummary,
+                    isLoading: viewModel.isLoadingProgressSummary
+                )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+
                 Divider()
 
                 content
             }
         }
+        .searchable(
+            text: $viewModel.filters.searchText,
+            placement: .toolbar,
+            prompt: "搜索单词、读音、释义、词源或罗马音"
+        )
         .task(id: selectedWordBookID) {
             viewModel.loadWords(context: modelContext, selectedWordBookID: selectedWordBookID)
-        }
-        .overlay(alignment: .topLeading) {
-            Button("搜索") {
-                isSearchFieldFocused = true
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .frame(width: 0, height: 0)
-            .opacity(0)
-            .accessibilityHidden(true)
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -236,7 +237,7 @@ struct WordbookView: View {
             VStack(spacing: 14) {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
-                    title: "没有匹配的词条",
+                    title: emptyFilterTitle,
                     message: "当前搜索或筛选条件下没有结果。"
                 )
 
@@ -252,6 +253,11 @@ struct WordbookView: View {
         }
     }
 
+    private var emptyFilterTitle: String {
+        let query = viewModel.filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? "没有符合条件的单词" : "没有找到“\(query)”"
+    }
+
     @ViewBuilder
     private func wordBrowser(availableWidth: CGFloat) -> some View {
         let mode = WordbookLayoutPolicy.mode(for: availableWidth)
@@ -263,18 +269,12 @@ struct WordbookView: View {
 
                     WordDetailView(
                         word: selectedWord,
-                        onEdit: {
-                            viewModel.beginEditSelectedWord()
-                        },
-                        onDelete: {
-                            viewModel.requestDeleteSelectedWord()
-                        },
-                        onResetProgress: {
-                            viewModel.requestResetProgressForSelectedWord()
-                        },
+                        onToggleFavorite: { viewModel.toggleFavoriteForSelectedWord(context: modelContext) },
+                        onRequestResetProgress: { viewModel.requestResetProgressForSelectedWord() },
                         onClose: {
                             viewModel.clearSelection()
-                        }
+                        },
+                        refreshToken: viewModel.detailRefreshToken
                     )
                     .frame(minWidth: 200, idealWidth: 300, maxWidth: 400)
                 }
@@ -282,10 +282,10 @@ struct WordbookView: View {
             } else {
                 WordDetailView(
                     word: selectedWord,
-                    onEdit: { viewModel.beginEditSelectedWord() },
-                    onDelete: { viewModel.requestDeleteSelectedWord() },
-                    onResetProgress: { viewModel.requestResetProgressForSelectedWord() },
-                    onClose: { viewModel.clearSelection() }
+                    onToggleFavorite: { viewModel.toggleFavoriteForSelectedWord(context: modelContext) },
+                    onRequestResetProgress: { viewModel.requestResetProgressForSelectedWord() },
+                    onClose: { viewModel.clearSelection() },
+                    refreshToken: viewModel.detailRefreshToken
                 )
             }
         } else {
@@ -404,12 +404,6 @@ struct WordbookView: View {
                 }
             }
 
-            Button("重置学习记录") {
-                if let id = selection.first {
-                    viewModel.requestResetProgress(for: id, context: modelContext)
-                }
-            }
-
             Divider()
 
             Button("删除", role: .destructive) {
@@ -506,7 +500,7 @@ private extension View {
         onConfirm: @escaping () -> Void
     ) -> some View {
         alert(
-            "确认重置学习记录？",
+            "重置为未学习？",
             isPresented: Binding(
                 get: { word.wrappedValue != nil },
                 set: { isPresented in
@@ -517,9 +511,64 @@ private extension View {
             )
         ) {
             Button("取消", role: .cancel, action: onCancel)
-            Button("重置学习记录", role: .destructive, action: onConfirm)
+            Button("重置", role: .destructive, action: onConfirm)
         } message: {
-            Text("该单词会恢复为新词，并删除该词的复习历史。此操作不可撤销。")
+            if let target = word.wrappedValue {
+                Text("将清除“\(target.japanese)”的全部学习进度和复习历史，并重新作为未学习单词加入新词队列。收藏状态不会改变。")
+            }
+        }
+    }
+}
+
+struct WordbookProgressSummaryView: View {
+    let counts: WordBookSummaryCounts
+    let isLoading: Bool
+
+    init(counts: WordBookSummaryCounts, isLoading: Bool) {
+        self.counts = counts
+        self.isLoading = isLoading
+    }
+
+    init(summary: WordBookSummary, isLoading: Bool) {
+        counts = WordBookSummaryCounts(
+            totalWordCount: summary.totalWordCount,
+            newWordCount: summary.newWordCount,
+            learningWordCount: summary.learningWordCount,
+            reviewWordCount: summary.reviewWordCount,
+            dueReviewCount: summary.dueReviewCount,
+            masteredWordCount: summary.masteredWordCount
+        )
+        self.isLoading = isLoading
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("学习进度")
+                    .font(.headline)
+                Spacer()
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("正在加载学习进度")
+                } else {
+                    Text("已开始学习 \(counts.startedWordCount) / \(counts.totalWordCount)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ProgressView(
+                value: Double(counts.startedWordCount),
+                total: Double(max(1, counts.totalWordCount))
+            )
+            .accessibilityLabel("已开始学习")
+            .accessibilityValue("\(counts.startedWordCount) / \(counts.totalWordCount)")
+
+            Text("未学习 \(counts.newWordCount)　复习中 \(counts.reviewingWordCount)　已熟练 \(counts.masteredWordCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
     }
 }

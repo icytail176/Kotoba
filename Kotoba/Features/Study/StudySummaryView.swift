@@ -9,11 +9,11 @@ import SwiftUI
 
 struct StudySummaryView: View {
     let summary: StudySessionViewModel.Summary
-    let onReturnHome: () -> Void
+    @State private var returnHomeAction: StudyCompletionAction
 
     init(summary: StudySessionViewModel.Summary, onReturnHome: @escaping () -> Void = {}) {
         self.summary = summary
-        self.onReturnHome = onReturnHome
+        _returnHomeAction = State(initialValue: StudyCompletionAction(onReturnHome: onReturnHome))
     }
 
     var body: some View {
@@ -67,9 +67,11 @@ struct StudySummaryView: View {
             Divider()
             HStack {
                 Spacer()
-                Button("返回首页", action: onReturnHome)
+                Button("返回首页") { returnHomeAction.perform() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityHint("按 Return 键返回今日学习首页")
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
@@ -106,6 +108,21 @@ struct StudySummaryView: View {
                 }
             }
         }
+    }
+}
+
+final class StudyCompletionAction {
+    let onReturnHome: () -> Void
+    private var didPerform = false
+
+    init(onReturnHome: @escaping () -> Void) {
+        self.onReturnHome = onReturnHome
+    }
+
+    func perform() {
+        guard !didPerform else { return }
+        didPerform = true
+        onReturnHome()
     }
 }
 

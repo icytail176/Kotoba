@@ -1,4 +1,15 @@
-Kotoba includes a small derived set of loanword-source metadata from JMdict.
+Kotoba's built-in loanword sidecar primarily preserves the source-form field
+from the attributed egg rolls / anki-jlpt-decks vocabulary data. JMdict is used
+only as a conservative supplement when it contains an explicit, unambiguous
+lsource. The generator and its matching rules are stored in
+Scripts/generate_loanword_etymology.py.
+
+The テレビ mapping comes directly from egg rolls' tagged source-form field
+(television); it is not inferred from a JMdict gloss or hardcoded in the app.
+
+egg rolls / anki-jlpt-decks is distributed under CC BY-NC 4.0.
+Project: https://github.com/5mdld/anki-jlpt-decks
+Licence: https://creativecommons.org/licenses/by-nc/4.0/
 
 JMdict is provided by the Electronic Dictionary Research and Development Group
 and is distributed under the Creative Commons Attribution-ShareAlike 4.0

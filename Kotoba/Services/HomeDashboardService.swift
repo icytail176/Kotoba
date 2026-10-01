@@ -15,6 +15,14 @@ struct HomeExample: Equatable {
     let chinese: String
 }
 
+struct ReviewForecastBucket: Identifiable, Equatable, Sendable {
+    var id: Int { dayOffset }
+
+    let dayOffset: Int
+    let day: Date
+    let reviewCount: Int
+}
+
 struct HomeDashboardSnapshot: Equatable {
     let wordBookID: UUID?
     let wordBookName: String
@@ -22,8 +30,11 @@ struct HomeDashboardSnapshot: Equatable {
     let totalWordCount: Int
     let remainingNewWordCount: Int
     let dueReviewCount: Int
+    let reviewingWordCount: Int
     let masteredWordCount: Int
+    let reviewForecast: [ReviewForecastBucket]
     let hasWordBooks: Bool
+    let isBuiltInWordBook: Bool
     let example: HomeExample?
 }
 
@@ -32,7 +43,8 @@ struct HomeDashboardService {
     func makeSnapshot(
         in context: ModelContext,
         selectedIDString: String?,
-        now: Date = Date()
+        now: Date = Date(),
+        calendar: Calendar = .current
     ) throws -> (snapshot: HomeDashboardSnapshot, resolvedWordBook: WordBook?, wordBooks: [WordBook]) {
         try PerformanceTrace.measure("Home dashboard load") {
             let wordBookService = WordBookService()
@@ -47,8 +59,11 @@ struct HomeDashboardService {
                         totalWordCount: 0,
                         remainingNewWordCount: 0,
                         dueReviewCount: 0,
+                        reviewingWordCount: 0,
                         masteredWordCount: 0,
+                        reviewForecast: Self.reviewForecast(words: [], now: now, calendar: calendar),
                         hasWordBooks: !books.isEmpty,
+                        isBuiltInWordBook: false,
                         example: nil
                     ),
                     nil,
@@ -68,9 +83,12 @@ struct HomeDashboardService {
                     return false
                 }
 
-                return StudyDuePolicy.isDue(progress: progress, now: now)
+                return StudyDuePolicy.isDue(progress: progress, now: now, calendar: calendar)
             }.count
-            let masteredWordCount = words.filter { $0.progress?.state == .review }.count
+            let reviewingWordCount = words.filter {
+                LearningStatePresentation.isReviewing($0.progress?.state)
+            }.count
+            let masteredWordCount = words.filter { $0.progress?.state == .suspended }.count
 
             return (
                 HomeDashboardSnapshot(
@@ -80,13 +98,44 @@ struct HomeDashboardService {
                     totalWordCount: words.count,
                     remainingNewWordCount: remainingNewWordCount,
                     dueReviewCount: dueReviewCount,
+                    reviewingWordCount: reviewingWordCount,
                     masteredWordCount: masteredWordCount,
+                    reviewForecast: Self.reviewForecast(words: words, now: now, calendar: calendar),
                     hasWordBooks: true,
+                    isBuiltInWordBook: selectedBook.isBuiltIn,
                     example: randomExample(from: words)
                 ),
                 selectedBook,
                 books
             )
+        }
+    }
+
+    nonisolated static func reviewForecast(
+        words: [VocabularyWord],
+        now: Date,
+        calendar: Calendar
+    ) -> [ReviewForecastBucket] {
+        let today = calendar.startOfDay(for: now)
+        var counts = Array(repeating: 0, count: 7)
+
+        for word in words where !word.isArchived {
+            guard let progress = word.progress,
+                  progress.state == .learning
+                    || progress.state == .relearning
+                    || progress.state == .review else {
+                continue
+            }
+
+            let dueDay = calendar.startOfDay(for: progress.dueAt)
+            let offset = max(0, calendar.dateComponents([.day], from: today, to: dueDay).day ?? 0)
+            guard counts.indices.contains(offset) else { continue }
+            counts[offset] += 1
+        }
+
+        return counts.indices.compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            return ReviewForecastBucket(dayOffset: offset, day: day, reviewCount: counts[offset])
         }
     }
 

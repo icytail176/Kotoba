@@ -125,6 +125,48 @@ final class SpellingAndConjugationTests: XCTestCase {
         XCTAssertEqual(viewModel.summary?.reading.firstAttemptCorrectCount, 1)
     }
 
+    func testReadingRoundWrongThenCorrectRequeuesExactlyOnce() throws {
+        let question = SpellingQuestion(
+            wordID: UUID(),
+            direction: .expressionToReading,
+            prompt: "確認",
+            expectedAnswer: "かくにん",
+            referenceText: "根据单词写假名",
+            wordExpression: "確認",
+            wordReading: "かくにん",
+            meaningChinese: "确认",
+            exampleJapanese: ""
+        )
+        let viewModel = SpellingSessionViewModel(expressionQuestions: [], readingQuestions: [question])
+
+        viewModel.answer = "かくじん"
+        XCTAssertEqual(viewModel.handleEnter(), .submitted)
+        XCTAssertFalse(viewModel.isAnswerLocked)
+        XCTAssertEqual(viewModel.currentIndex, 0)
+
+        viewModel.answer = "カクニン"
+        XCTAssertEqual(viewModel.handleEnter(), .submitted)
+        XCTAssertTrue(viewModel.currentCorrectAnswerWasRequeued)
+        XCTAssertEqual(viewModel.handleEnter(), .advanced)
+        XCTAssertEqual(viewModel.phase, .reading)
+        XCTAssertEqual(viewModel.currentIndex, 1)
+
+        viewModel.answer = "かくにん"
+        XCTAssertEqual(viewModel.handleEnter(), .submitted)
+        XCTAssertFalse(viewModel.currentCorrectAnswerWasRequeued)
+        XCTAssertEqual(viewModel.handleEnter(), .completed)
+
+        let summary = try XCTUnwrap(viewModel.summary)
+        let result = try XCTUnwrap(summary.resultsByWordID[question.wordID])
+        XCTAssertEqual(result.reading.wrongCount, 1)
+        XCTAssertEqual(result.reading.requeueCount, 1)
+        XCTAssertFalse(result.reading.passedFirstTry)
+        XCTAssertEqual(summary.reading.totalCount, 1)
+        XCTAssertEqual(summary.reading.firstAttemptCorrectCount, 0)
+        XCTAssertEqual(summary.reading.retryCorrectCount, 1)
+        XCTAssertEqual(Set(result.errorTypes), Set([.reading, .readingDirection]))
+    }
+
     func testHintShortcutIsExactFirstRoundCommandShiftHAndIMEAware() {
         XCTAssertTrue(SpellingHintShortcutPolicy.shouldHandle(
             phase: .expression, isRepeat: false, modifiers: [.command, .shift], keyCode: 4, characters: "h", hasMarkedText: false
@@ -149,7 +191,11 @@ final class SpellingAndConjugationTests: XCTestCase {
 
         word.loanwordSourceTerm = "computer"
         word.loanwordSourceLanguageCode = "eng"
-        XCTAssertEqual(LoanwordEtymologyPresentation.make(for: word), .init(title: "外来语词源", value: "computer（英语）"))
+        let standard = try XCTUnwrap(LoanwordEtymologyPresentation.make(for: word))
+        XCTAssertEqual(standard.title, "外来语词源")
+        XCTAssertEqual(standard.sourceTerm, "computer")
+        XCTAssertEqual(standard.sourceLanguageName, "英语")
+        XCTAssertEqual(standard.value, "computer（英语）")
 
         word.loanwordSourceTerm = "salary + man"
         word.loanwordIsWasei = true
@@ -158,7 +204,10 @@ final class SpellingAndConjugationTests: XCTestCase {
         word.loanwordSourceTerm = "form"
         word.loanwordIsWasei = false
         word.loanwordIsPartial = true
-        XCTAssertEqual(LoanwordEtymologyPresentation.make(for: word), .init(title: "部分词源", value: "form（英语）"))
+        let partial = try XCTUnwrap(LoanwordEtymologyPresentation.make(for: word))
+        XCTAssertEqual(partial.title, "部分词源")
+        XCTAssertEqual(partial.value, "form（英语）")
+        XCTAssertEqual(partial.inlineValue, "form（英语） · 部分词源")
     }
 
     func testLocalVerbRulesGenerateCoreForms() throws {
@@ -246,6 +295,7 @@ final class SpellingAndConjugationTests: XCTestCase {
         XCTAssertEqual(StudyCardKeyboardCommand.command(for: "2"), .rate(.hard))
         XCTAssertEqual(StudyCardKeyboardCommand.command(for: "3"), .rate(.good))
         XCTAssertEqual(StudyCardKeyboardCommand.command(for: "\u{7F}"), .rate(.easy))
+        XCTAssertEqual(StudyCardKeyboardCommand.command(for: "\u{F728}"), .rate(.easy))
         XCTAssertEqual(StudyCardKeyboardCommand.command(for: "\u{F702}"), .previousPage)
         XCTAssertEqual(StudyCardKeyboardCommand.command(for: "\u{F703}"), .nextPage)
         XCTAssertNil(StudyCardKeyboardCommand.command(for: "4"))
@@ -254,6 +304,7 @@ final class SpellingAndConjugationTests: XCTestCase {
         XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 20, characters: nil), .rate(.good))
         XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 49, characters: nil), .showAnswer)
         XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 51, characters: nil), .rate(.easy))
+        XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 117, characters: nil), .rate(.easy))
         XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 123, characters: nil), .previousPage)
         XCTAssertEqual(StudyCardKeyboardCommand.command(forKeyCode: 124, characters: nil), .nextPage)
     }
@@ -288,35 +339,44 @@ final class SpellingAndConjugationTests: XCTestCase {
 
     func testStudyCardRendersAtNarrowStandardAndWideWindowWidths() throws {
         let word = VocabularyWord(
-            japanese: "食べる",
-            kana: "たべる",
-            chineseMeaning: "吃",
-            partOfSpeech: "一段动词",
+            japanese: "テレビ",
+            kana: "テレビ",
+            chineseMeaning: "电视以及电视广播节目",
+            partOfSpeech: "名词",
             jlptLevel: "N5",
-            exampleJapanese: "朝ご飯を食べる。",
-            exampleChinese: "吃早饭。"
+            exampleJapanese: "私はテレビをあまり見ません。",
+            exampleChinese: "我不太看电视。",
+            tags: ["音调:①"],
+            loanwordSourceTerm: "television broadcasting and receiving equipment",
+            loanwordSourceLanguageCode: "eng",
+            loanwordIsPartial: true
         )
         let item = StudySession.Item(id: word.id, word: word, kind: .newWord, dueAt: Date())
 
-        for width in [360.0, 760.0, 1_100.0] {
+        for size in [
+            CGSize(width: 720, height: 560),
+            CGSize(width: 900, height: 700),
+            CGSize(width: 1_200, height: 800),
+            CGSize(width: 1_440, height: 900)
+        ] {
             let renderer = ImageRenderer(
                 content: StudyCardView(
                     item: item,
                     progressText: "1 / 10",
                     isAnswerVisible: true,
                     isSubmittingRating: false,
-                    conjugation: ConjugationEngine().generate(for: word),
+                    conjugation: nil,
                     onShowAnswer: {},
                     onToggleFavorite: {},
                     onRate: { _ in }
                 )
-                .frame(width: width, height: 620)
+                .frame(width: size.width, height: size.height)
             )
-            renderer.proposedSize = ProposedViewSize(width: width, height: 620)
+            renderer.proposedSize = ProposedViewSize(width: size.width, height: size.height)
 
             let image = try XCTUnwrap(renderer.nsImage)
-            XCTAssertEqual(image.size.width, width, accuracy: 0.5)
-            XCTAssertEqual(image.size.height, 620, accuracy: 0.5)
+            XCTAssertEqual(image.size.width, size.width, accuracy: 0.5)
+            XCTAssertEqual(image.size.height, size.height, accuracy: 0.5)
         }
     }
 
