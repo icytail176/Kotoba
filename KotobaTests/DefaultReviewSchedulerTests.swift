@@ -229,6 +229,75 @@ final class DefaultReviewSchedulerTests: XCTestCase {
         )
     }
 
+    func testCalendarSchedulingPreservesLocalWallTimeAcrossDST() throws {
+        var dstCalendar = Calendar(identifier: .gregorian)
+        dstCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let dstScheduler = DefaultReviewScheduler(calendar: dstCalendar)
+
+        let springStart = try XCTUnwrap(DateComponents(
+            calendar: dstCalendar,
+            timeZone: dstCalendar.timeZone,
+            year: 2026,
+            month: 3,
+            day: 7,
+            hour: 12
+        ).date)
+        let spring = dstScheduler.schedule(
+            currentState: .new,
+            currentIntervalDays: 0,
+            reviewCount: 0,
+            lapseCount: 0,
+            rating: .hard,
+            now: springStart
+        )
+        let springComponents = dstCalendar.dateComponents([.year, .month, .day, .hour], from: spring.nextReviewAt)
+        XCTAssertEqual(springComponents, DateComponents(year: 2026, month: 3, day: 8, hour: 12))
+        XCTAssertEqual(spring.nextReviewAt.timeIntervalSince(springStart), 23 * 60 * 60, accuracy: 0.5)
+
+        let fallStart = try XCTUnwrap(DateComponents(
+            calendar: dstCalendar,
+            timeZone: dstCalendar.timeZone,
+            year: 2026,
+            month: 10,
+            day: 31,
+            hour: 12
+        ).date)
+        let fall = dstScheduler.schedule(
+            currentState: .new,
+            currentIntervalDays: 0,
+            reviewCount: 0,
+            lapseCount: 0,
+            rating: .hard,
+            now: fallStart
+        )
+        let fallComponents = dstCalendar.dateComponents([.year, .month, .day, .hour], from: fall.nextReviewAt)
+        XCTAssertEqual(fallComponents, DateComponents(year: 2026, month: 11, day: 1, hour: 12))
+        XCTAssertEqual(fall.nextReviewAt.timeIntervalSince(fallStart), 25 * 60 * 60, accuracy: 0.5)
+
+        let minuteStart = try XCTUnwrap(DateComponents(
+            calendar: dstCalendar,
+            timeZone: dstCalendar.timeZone,
+            year: 2026,
+            month: 3,
+            day: 8,
+            hour: 1,
+            minute: 55
+        ).date)
+        let minuteResult = dstScheduler.schedule(
+            currentState: .review,
+            currentIntervalDays: 10,
+            reviewCount: 3,
+            lapseCount: 0,
+            rating: .again,
+            now: minuteStart
+        )
+        XCTAssertEqual(minuteResult.nextReviewAt.timeIntervalSince(minuteStart), 10 * 60, accuracy: 0.5)
+        XCTAssertEqual(
+            dstCalendar.dateComponents([.year, .month, .day, .hour, .minute], from: minuteResult.nextReviewAt),
+            DateComponents(year: 2026, month: 3, day: 8, hour: 3, minute: 5)
+        )
+    }
+
     private func assertNewWordRating(_ rating: ReviewRating, expectedDays: Int, now: Date) {
         assertSchedule(
             currentState: .new,

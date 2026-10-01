@@ -56,7 +56,7 @@ struct BuiltInLoanwordEtymology: Equatable, Sendable {
     let expression: String
     let reading: String
     let sourceTerm: String
-    let sourceLanguageCode: String
+    let sourceLanguageCode: String?
     let isWasei: Bool
     let isPartial: Bool
 }
@@ -112,7 +112,10 @@ enum BuiltInWordBookError: LocalizedError, Equatable {
 struct BuiltInWordBookService {
     typealias PhaseRecorder = (_ phase: String, _ elapsed: Duration) -> Void
 
-    static let builtInVocabularyVersion = 6
+    // Version 8 refreshes the complete loanword sidecar. Versions 6 and 7
+    // already have the current vocabulary rows, so they take the metadata-only
+    // path below and preserve every learning object and review log.
+    static let builtInVocabularyVersion = 8
 
     nonisolated static let conjugationAuditCorrections = [
         BuiltInWordBookFieldCorrection(
@@ -247,6 +250,8 @@ struct BuiltInWordBookService {
 
             let needsIntegrityRepair = existingCounts == nil
             let appliesConjugationAuditFieldPatch = storedSeedVersion == 4 && !needsIntegrityRepair
+            let appliesLoanwordEtymologyPatch = (6..<Self.builtInVocabularyVersion).contains(storedSeedVersion)
+                && !needsIntegrityRepair
 
             #if DEBUG
             print(
@@ -274,6 +279,8 @@ struct BuiltInWordBookService {
                                 level: definition.level,
                                 now: now
                             )
+                            importedCounts[definition.level] = 0
+                        } else if appliesLoanwordEtymologyPatch {
                             importedCounts[definition.level] = 0
                         } else {
                             importedCounts[definition.level] = refresh(
@@ -505,13 +512,17 @@ struct BuiltInWordBookService {
                 guard validLevels.contains(fields[0]) else {
                     throw BuiltInWordBookError.invalidEtymologyRow(line: row.lineNumber, reason: "未知词书 \(fields[0])")
                 }
-                guard fields[1...4].allSatisfy({ !$0.isEmpty }) else {
-                    throw BuiltInWordBookError.invalidEtymologyRow(line: row.lineNumber, reason: "匹配键和来源字段不能为空")
+                guard fields[1...3].allSatisfy({ !$0.isEmpty }) else {
+                    throw BuiltInWordBookError.invalidEtymologyRow(line: row.lineNumber, reason: "匹配键和来源词不能为空")
                 }
                 guard let isWasei = parseBoolean(fields[5]), let isPartial = parseBoolean(fields[6]) else {
                     throw BuiltInWordBookError.invalidEtymologyRow(line: row.lineNumber, reason: "布尔字段必须为 true 或 false")
                 }
-                let key = fields[0...2].joined(separator: "\u{1F}")
+                let key = etymologyIdentityKey(
+                    level: fields[0],
+                    expression: fields[1],
+                    reading: fields[2]
+                )
                 guard keys.insert(key).inserted else {
                     throw BuiltInWordBookError.invalidEtymologyRow(line: row.lineNumber, reason: "wordBook + expression + reading 重复")
                 }
@@ -520,7 +531,7 @@ struct BuiltInWordBookService {
                     expression: fields[1],
                     reading: fields[2],
                     sourceTerm: fields[3],
-                    sourceLanguageCode: fields[4],
+                    sourceLanguageCode: fields[4].isEmpty ? nil : fields[4],
                     isWasei: isWasei,
                     isPartial: isPartial
                 )
@@ -559,7 +570,14 @@ struct BuiltInWordBookService {
 
         let expectedByBookAndWord = Dictionary(
             uniqueKeysWithValues: etymologies.map {
-                ([ $0.wordBook, $0.expression, $0.reading ].joined(separator: "\u{1F}"), $0)
+                (
+                    etymologyIdentityKey(
+                        level: $0.wordBook,
+                        expression: $0.expression,
+                        reading: $0.reading
+                    ),
+                    $0
+                )
             }
         )
 
@@ -569,7 +587,11 @@ struct BuiltInWordBookService {
         for definition in definitions {
             guard let book = booksByName[definition.displayName] else { continue }
             for word in book.words {
-                let key = [definition.level, word.japanese, word.kana].joined(separator: "\u{1F}")
+                let key = etymologyIdentityKey(
+                    level: definition.level,
+                    expression: word.japanese,
+                    reading: word.kana
+                )
                 guard expectedByBookAndWord[key] == nil else { continue }
                 if word.loanwordSourceTerm != nil || word.loanwordSourceLanguageCode != nil
                     || word.loanwordIsWasei || word.loanwordIsPartial {
@@ -584,7 +606,18 @@ struct BuiltInWordBookService {
 
         for item in etymologies {
             guard let displayName = displayNameByLevel[item.wordBook], let book = booksByName[displayName] else { continue }
-            let matches = book.words.filter { $0.japanese == item.expression && $0.kana == item.reading }
+            let itemKey = etymologyIdentityKey(
+                level: item.wordBook,
+                expression: item.expression,
+                reading: item.reading
+            )
+            let matches = book.words.filter {
+                !$0.isArchived && etymologyIdentityKey(
+                    level: item.wordBook,
+                    expression: $0.japanese,
+                    reading: $0.kana
+                ) == itemKey
+            }
             guard matches.count == 1, let word = matches.first else { continue }
             word.loanwordSourceTerm = item.sourceTerm
             word.loanwordSourceLanguageCode = item.sourceLanguageCode
@@ -592,6 +625,20 @@ struct BuiltInWordBookService {
             word.loanwordIsPartial = item.isPartial
             word.updatedAt = now
         }
+    }
+
+    private func etymologyIdentityKey(level: String, expression: String, reading: String) -> String {
+        [
+            level.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+            normalizedEtymologyText(expression),
+            hiraganaReading(normalizedEtymologyText(reading))
+        ].joined(separator: "\u{1F}")
+    }
+
+    private func normalizedEtymologyText(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCompatibilityMapping
     }
 
     private func builtInWordCounts(

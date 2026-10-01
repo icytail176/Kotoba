@@ -92,7 +92,6 @@ final class WordbookFilteringTests: XCTestCase {
         XCTAssertEqual(optionSets.jlptLevels, ["N5"])
         XCTAssertEqual(Set(optionSets.partsOfSpeech), Set(["サ变动词", "名词"]))
         XCTAssertEqual(Set(optionSets.tags), Set(["工作", "高频"]))
-        XCTAssertEqual(optionSets.learningStates, LearningState.allCases)
     }
 
     func testFilterResultLimitsVisibleRowsButKeepsMatchingCount() {

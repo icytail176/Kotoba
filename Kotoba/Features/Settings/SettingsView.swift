@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.studyGroupNewWordCountKey) private var studyGroupNewWordCount = AppSettings.defaultStudyGroupNewWordCount
     @AppStorage(AppSettings.reviewGroupWordCountKey) private var reviewGroupWordCount = AppSettings.defaultReviewGroupWordCount
     @StateObject private var viewModel = SettingsViewModel()
+    private let appVersion = AppVersionInfo.current
 
     var body: some View {
         PageScaffold(title: "设置", subtitle: "调整学习数量与管理本地数据。") {
@@ -24,7 +25,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("数据") {
+                Section("数据与备份") {
                     Button { viewModel.prepareFullBackupExport(context: modelContext) } label: {
                         Label("导出备份", systemImage: "externaldrive")
                     }
@@ -47,6 +48,22 @@ struct SettingsView: View {
                         .accessibilityElement(children: .combine)
                     }
                     Text("备份包含词书、词条、学习进度与复习记录。导入前会要求选择合并策略。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("数据来源") {
+                    ForEach(AppAttribution.all) { attribution in
+                        AttributionRow(attribution: attribution)
+                    }
+                }
+
+                Section("关于") {
+                    LabeledContent("Kotoba") {
+                        Text(appVersion.displayText)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("面向中文用户的本地优先日语词汇学习工具。学习数据保存在本机，不依赖在线账户。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -113,6 +130,33 @@ struct SettingsView: View {
         } set: { isPresented in
             if !isPresented { message.wrappedValue = nil }
         }
+    }
+}
+
+private struct AttributionRow: View {
+    let attribution: DataSourceAttribution
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(attribution.fullName)
+                .font(.headline)
+            Text(attribution.notice)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(attribution.modificationNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let licenseName = attribution.licenseName {
+                LabeledContent("许可") {
+                    Text(licenseName)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Link("打开原项目", destination: attribution.url)
+                .accessibilityLabel("打开 \(attribution.fullName) 原项目")
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
     }
 }
 

@@ -17,17 +17,24 @@ enum LearningState: String, CaseIterable, Codable, Identifiable, Sendable {
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .new:
-            return "新词"
-        case .learning:
-            return "学习中"
-        case .review:
+        LearningStatePresentation.name(for: self)
+    }
+}
+
+enum LearningStatePresentation {
+    static func name(for state: LearningState?) -> String {
+        switch state {
+        case nil, .new:
+            return "未学习"
+        case .learning, .relearning, .review:
             return "复习中"
-        case .relearning:
-            return "重新学习"
         case .suspended:
-            return "熟练"
+            return "已熟练"
         }
+    }
+
+    static func isReviewing(_ state: LearningState?) -> Bool {
+        guard let state else { return false }
+        return state == .learning || state == .relearning || state == .review
     }
 }

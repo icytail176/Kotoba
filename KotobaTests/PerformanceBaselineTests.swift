@@ -253,7 +253,11 @@ final class PerformanceBaselineTests: XCTestCase {
                     wordID: words[index % words.count].id,
                     reviewedAt: now.addingTimeInterval(TimeInterval(-(index % 120) * 86_400)),
                     rating: index.isMultiple(of: 7) ? .again : .good,
-                    previousState: index.isMultiple(of: 5) ? .new : .review
+                    previousState: index.isMultiple(of: 5) ? .new : .review,
+                    nextState: .review,
+                    hasSpellingDiagnostics: false,
+                    readingWrongCount: 0,
+                    spellingWrongCount: 0
                 )
             }
             let input = StudyStatisticsInput(logs: logs, words: words)

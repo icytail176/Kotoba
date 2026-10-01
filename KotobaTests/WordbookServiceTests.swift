@@ -244,16 +244,18 @@ final class WordBookServiceTests: XCTestCase {
         let secondBook = WordBook(name: "第二本")
         let newWord = makeWord("学生", reading: "がくせい", wordBook: firstBook, state: .new, reviewCount: 0)
         let learningWord = makeWord("食べる", reading: "たべる", wordBook: firstBook, state: .learning, reviewCount: 1)
+        let relearningWord = makeWord("飲む", reading: "のむ", wordBook: firstBook, state: .relearning, reviewCount: 2)
         let reviewWord = makeWord("確認", reading: "かくにん", wordBook: firstBook, state: .review, reviewCount: 3)
         reviewWord.progress?.dueAt = now.addingTimeInterval(-60)
-        let archivedWord = makeWord("古い", reading: "ふるい", wordBook: firstBook, state: .review, reviewCount: 1)
+        let masteredWord = makeWord("覚える", reading: "おぼえる", wordBook: firstBook, state: .suspended, reviewCount: 4)
+        let archivedWord = makeWord("古い", reading: "ふるい", wordBook: firstBook, state: .suspended, reviewCount: 1)
         archivedWord.isArchived = true
         let secondBookWord = makeWord("便利", reading: "べんり", wordBook: secondBook, state: .review, reviewCount: 2)
         secondBookWord.progress?.dueAt = now.addingTimeInterval(60)
 
         context.insert(firstBook)
         context.insert(secondBook)
-        [newWord, learningWord, reviewWord, archivedWord, secondBookWord].forEach {
+        [newWord, learningWord, relearningWord, reviewWord, masteredWord, archivedWord, secondBookWord].forEach {
             context.insert($0)
         }
         try context.save()
@@ -267,10 +269,11 @@ final class WordBookServiceTests: XCTestCase {
         let firstSummary = try XCTUnwrap(summaries.first { $0.id == firstBook.id })
         let secondSummary = try XCTUnwrap(summaries.first { $0.id == secondBook.id })
 
-        XCTAssertEqual(firstSummary.totalWordCount, 3)
+        XCTAssertEqual(firstSummary.totalWordCount, 5)
         XCTAssertEqual(firstSummary.newWordCount, 1)
-        XCTAssertEqual(firstSummary.learningWordCount, 1)
+        XCTAssertEqual(firstSummary.learningWordCount, 2)
         XCTAssertEqual(firstSummary.reviewWordCount, 1)
+        XCTAssertEqual(firstSummary.masteredWordCount, 1)
         XCTAssertEqual(firstSummary.dueReviewCount, 1)
         XCTAssertTrue(firstSummary.isSelected)
         XCTAssertEqual(secondSummary.totalWordCount, 1)

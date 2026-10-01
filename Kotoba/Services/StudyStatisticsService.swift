@@ -94,7 +94,11 @@ actor StudyStatisticsSnapshotStore {
                     wordID: $0.word?.id,
                     reviewedAt: $0.reviewedAt,
                     rating: $0.rating,
-                    previousState: $0.previousState
+                    previousState: $0.previousState,
+                    nextState: $0.nextState,
+                    hasSpellingDiagnostics: !($0.questionDirectionRawValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                    readingWrongCount: $0.readingWrongCount,
+                    spellingWrongCount: $0.spellingWrongCount
                 )
             },
             words: words.map {

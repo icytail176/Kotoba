@@ -12,6 +12,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case wordbook
     case wordBooks
     case statistics
+    case kanaChart
     case settings
 
     var id: String { rawValue }
@@ -26,6 +27,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "词书"
         case .statistics:
             "学习统计"
+        case .kanaChart:
+            "五十音图"
         case .settings:
             "设置"
         }
@@ -41,6 +44,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "books.vertical.fill"
         case .statistics:
             "chart.bar.xaxis"
+        case .kanaChart:
+            "character.book.closed"
         case .settings:
             "gearshape"
         }

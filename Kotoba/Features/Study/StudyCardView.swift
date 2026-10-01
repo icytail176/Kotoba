@@ -117,16 +117,91 @@ struct StudyCardView: View {
 
     private var answerContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            StudyAnswerRow(title: "假名", value: word.kana)
-            StudyAnswerRow(title: "释义", value: word.chineseMeaning)
+            readingRow
+            meaningRow
             StudyAnswerRow(title: "词性", value: word.partOfSpeech)
-            if let etymology = LoanwordEtymologyPresentation.make(for: word) {
-                StudyAnswerRow(title: etymology.title, value: etymology.value)
-            }
             StudyAnswerRow(title: "例句", value: word.exampleJapanese)
             StudyAnswerRow(title: "翻译", value: word.exampleChinese)
         }
         .frame(maxWidth: 620, alignment: .leading)
+    }
+
+    private var readingRow: some View {
+        let romaji = JapaneseRomajiFormatter.string(from: word.kana)
+        let accent = PitchAccentPresentation.make(tags: word.tags)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("假名")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(word.kana).font(.title3)
+                    Text("· \(romaji)").foregroundStyle(.secondary)
+                    if let accent {
+                        Text("· \(accent.displayText)").foregroundStyle(.secondary)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(word.kana).font(.title3)
+                    HStack(spacing: 7) {
+                        Text(romaji)
+                        if let accent { Text(accent.displayText) }
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(readingAccessibilityLabel(romaji: romaji, accent: accent))
+    }
+
+    private var meaningRow: some View {
+        let presentation = StudyCardMeaningPresentation.make(for: item)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("释义")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if !presentation.meaning.isEmpty {
+                        Text(presentation.meaning)
+                            .font(.title3)
+                            .layoutPriority(1)
+                    }
+                    if let source = presentation.sourceMetadata {
+                        Text(presentation.meaning.isEmpty ? source : "· \(source)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    if !presentation.meaning.isEmpty {
+                        Text(presentation.meaning).font(.title3)
+                    }
+                    if let source = presentation.sourceMetadata {
+                        Text(source)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityText)
+    }
+
+    private func readingAccessibilityLabel(
+        romaji: String,
+        accent: PitchAccentPresentation?
+    ) -> String {
+        var components = ["假名 \(word.kana)", "罗马音 \(romaji)"]
+        if let accent { components.append(accent.accessibilityText) }
+        return components.joined(separator: "，")
     }
 
     private var conjugationPage: some View {
@@ -238,7 +313,7 @@ enum StudyCardKeyboardCommand: Equatable {
         case 19: return .rate(.hard)
         case 20: return .rate(.good)
         case 49: return .showAnswer
-        case 51: return .rate(.easy)
+        case 51, 117: return .rate(.easy)
         case 123: return .previousPage
         case 124: return .nextPage
         default:
@@ -266,7 +341,7 @@ enum StudyCardKeyboardCommand: Equatable {
         case "1": .rate(.again)
         case "2": .rate(.hard)
         case "3": .rate(.good)
-        case "\u{7F}", "\u{8}": .rate(.easy)
+        case "\u{7F}", "\u{8}", "\u{F728}": .rate(.easy)
         case "\u{F702}": .previousPage
         case "\u{F703}": .nextPage
         default: nil
@@ -387,6 +462,8 @@ private struct StudyAnswerRow: View {
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text(trimmedValue).font(.title3).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(title)，\(trimmedValue)")
         }
     }
 }

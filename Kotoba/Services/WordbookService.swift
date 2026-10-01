@@ -17,6 +17,7 @@ struct WordBookSummary: Identifiable, Equatable {
     let learningWordCount: Int
     let reviewWordCount: Int
     let dueReviewCount: Int
+    let masteredWordCount: Int
     let createdAt: Date
     let isSelected: Bool
 }
@@ -27,25 +28,37 @@ struct WordBookSummaryCounts: Equatable, Sendable {
     var learningWordCount = 0
     var reviewWordCount = 0
     var dueReviewCount = 0
+    var masteredWordCount = 0
+
+    var startedWordCount: Int {
+        max(0, totalWordCount - newWordCount)
+    }
+
+    var reviewingWordCount: Int {
+        learningWordCount + reviewWordCount
+    }
 
     nonisolated init(
         totalWordCount: Int = 0,
         newWordCount: Int = 0,
         learningWordCount: Int = 0,
         reviewWordCount: Int = 0,
-        dueReviewCount: Int = 0
+        dueReviewCount: Int = 0,
+        masteredWordCount: Int = 0
     ) {
         self.totalWordCount = totalWordCount
         self.newWordCount = newWordCount
         self.learningWordCount = learningWordCount
         self.reviewWordCount = reviewWordCount
         self.dueReviewCount = dueReviewCount
+        self.masteredWordCount = masteredWordCount
     }
 
     nonisolated mutating func include(_ word: VocabularyWord, now: Date) {
         totalWordCount += 1
 
         guard let progress = word.progress else {
+            newWordCount += 1
             return
         }
 
@@ -57,7 +70,7 @@ struct WordBookSummaryCounts: Equatable, Sendable {
         case .review:
             reviewWordCount += 1
         case .suspended:
-            break
+            masteredWordCount += 1
         }
 
         if StudyDuePolicy.isDue(state: progress.state, dueAt: progress.dueAt, now: now) {
@@ -93,6 +106,46 @@ enum WordbookFilterValue: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum WordbookStatusFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case new
+    case review
+    case mastered
+    case favorite
+    case difficult
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .all: "全部"
+        case .new: "未学习"
+        case .review: "复习中"
+        case .mastered: "已熟练"
+        case .favorite: "收藏"
+        case .difficult: "易错词"
+        }
+    }
+}
+
+enum WordbookSortOption: String, CaseIterable, Identifiable, Sendable {
+    case defaultOrder
+    case recentlyStudied
+    case nextDue
+    case lapseCount
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .defaultOrder: "默认"
+        case .recentlyStudied: "最近学习"
+        case .nextDue: "下次复习"
+        case .lapseCount: "遗忘次数"
+        }
+    }
+}
+
 struct WordbookFilters: Equatable {
     static let currentWordBookValue = "__current_word_book__"
 
@@ -101,8 +154,9 @@ struct WordbookFilters: Equatable {
     var jlptLevel = WordbookFilterValue.all.rawValue
     var partOfSpeech = WordbookFilterValue.all.rawValue
     var tag = WordbookFilterValue.all.rawValue
-    var learningState = WordbookFilterValue.all.rawValue
     var favoritesOnly = false
+    var status = WordbookStatusFilter.all
+    var sort = WordbookSortOption.defaultOrder
 }
 
 struct WordEditorDraft: Equatable {
@@ -138,7 +192,6 @@ struct WordbookOptionSets: Equatable {
     let jlptLevels: [String]
     let partsOfSpeech: [String]
     let tags: [String]
-    let learningStates: [LearningState]
 }
 
 struct WordbookFilterResult {
@@ -202,6 +255,11 @@ enum WordbookValidationError: LocalizedError, Equatable {
 @MainActor
 struct WordbookService {
     private let partOfSpeechTokenizer = PartOfSpeechTokenizer()
+    private let saveChanges: (ModelContext) throws -> Void
+
+    init(saveChanges: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
+        self.saveChanges = saveChanges
+    }
 
     func fetchWords(in context: ModelContext, wordBookID: UUID? = nil) throws -> [VocabularyWord] {
         var descriptor: FetchDescriptor<VocabularyWord>
@@ -263,6 +321,29 @@ struct WordbookService {
         let words = try context.fetch(descriptor)
         PerformanceTrace.fetch("Wordbook detail fetch", count: words.count)
         return words.first
+    }
+
+    func fetchReviewLogs(
+        for wordID: UUID,
+        in context: ModelContext,
+        limit: Int? = 10
+    ) throws -> (logs: [ReviewLog], totalCount: Int) {
+        let predicate = #Predicate<ReviewLog> { log in
+            log.word?.id == wordID
+        }
+        var descriptor = FetchDescriptor<ReviewLog>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.reviewedAt, order: .reverse)]
+        )
+        if let limit {
+            descriptor.fetchLimit = max(0, limit)
+        }
+        descriptor.includePendingChanges = true
+
+        let logs = try context.fetch(descriptor)
+        let totalCount = try context.fetchCount(FetchDescriptor<ReviewLog>(predicate: predicate))
+        PerformanceTrace.fetch("Word detail ReviewLog fetch", count: logs.count)
+        return (logs, totalCount)
     }
 
     func fetchWordPage(
@@ -339,7 +420,7 @@ struct WordbookService {
         using filters: WordbookFilters,
         currentWordBookID: UUID?
     ) -> [VocabularyWord] {
-        let searchText = filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchText = normalizedSearchText(filters.searchText)
 
         return words.filter {
             matches($0, using: filters, currentWordBookID: currentWordBookID, searchText: searchText)
@@ -353,7 +434,7 @@ struct WordbookService {
         visibleLimit: Int,
         selectedWordID: UUID?
     ) -> WordbookFilterResult {
-        let searchText = filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchText = normalizedSearchText(filters.searchText)
         let visibleLimit = max(0, visibleLimit)
         var visibleWords: [VocabularyWord] = []
         var matchingCount = 0
@@ -389,8 +470,7 @@ struct WordbookService {
             wordBooks: wordBooks.map { WordBookOption(id: $0.id, name: $0.name) },
             jlptLevels: jlptLevels,
             partsOfSpeech: partsOfSpeech,
-            tags: tags,
-            learningStates: LearningState.allCases
+            tags: tags
         )
     }
 
@@ -512,9 +592,8 @@ struct WordbookService {
             for log in Array(word.reviewLogs) {
                 context.delete(log)
             }
-            word.reviewLogs.removeAll()
-            word.updatedAt = now
-            try context.save()
+            try saveChanges(context)
+            StudyStatisticsService.invalidateCache()
         } catch {
             context.rollback()
             throw error
@@ -603,6 +682,10 @@ struct WordbookService {
         currentWordBookID: UUID?,
         searchText: String
     ) -> Bool {
+        guard !word.isArchived else {
+            return false
+        }
+
         switch filters.wordBookID {
         case WordbookFilterValue.all.rawValue:
             break
@@ -618,10 +701,7 @@ struct WordbookService {
         }
 
         if !searchText.isEmpty {
-            let matchesSearch = word.japanese.localizedCaseInsensitiveContains(searchText)
-                || word.kana.localizedCaseInsensitiveContains(searchText)
-                || word.chineseMeaning.localizedCaseInsensitiveContains(searchText)
-            if !matchesSearch {
+            if !matchesSearch(word, normalizedQuery: searchText) {
                 return false
             }
         }
@@ -643,10 +723,8 @@ struct WordbookService {
             return false
         }
 
-        if filters.learningState != WordbookFilterValue.all.rawValue {
-            guard word.progress?.state.rawValue == filters.learningState else {
-                return false
-            }
+        if !matchesStatus(word, status: filters.status) {
+            return false
         }
 
         return true
@@ -659,67 +737,32 @@ struct WordbookService {
         offset: Int,
         limit: Int
     ) throws -> WordbookPage {
-        // Post-filtering still preserves the exact ordering and matching semantics,
-        // but larger batches avoid one SwiftData round trip per visible page while
-        // keeping peak materialization bounded for large stores.
-        // Keep the common first-page query lean, while amortizing SwiftData
-        // round trips for deeper pages that require post-fetch filtering.
-        let batchSize = offset == 0 ? max(limit, 50) : max(limit, 500)
-        var candidateOffset = 0
-        var matchingCount = 0
-        var rows: [WordbookRowViewData] = []
-        rows.reserveCapacity(limit)
-        var hasNextPage = false
-        var exhaustedCandidates = false
+        // Search and derived states cannot all be expressed safely as SwiftData
+        // predicates. Fetch the scoped candidate set once, then filter it in
+        // memory so a 4,000-word book never performs a fetch per row.
+        let descriptor = makeWordPageDescriptor(
+            scopedWordBookID: scopedWordBookID,
+            filters: filters
+        )
+        let candidates = try context.fetch(descriptor)
+        PerformanceTrace.fetch("Wordbook post-filter candidate fetch", count: candidates.count)
 
-        candidateScan: while true {
-            var descriptor = makeWordPageDescriptor(
-                scopedWordBookID: scopedWordBookID,
-                filters: filters
-            )
-            descriptor.fetchOffset = candidateOffset
-            descriptor.fetchLimit = batchSize
-
-            let candidates = try context.fetch(descriptor)
-            PerformanceTrace.fetch("Wordbook post-filter candidate fetch", count: candidates.count)
-            guard !candidates.isEmpty else {
-                exhaustedCandidates = true
-                break
-            }
-
-            let filterStart = ContinuousClock.now
-            for word in candidates where matchesPostFetchFilters(word, using: filters) {
-                if matchingCount >= offset, rows.count < limit {
-                    rows.append(WordbookRowViewData(word: word))
-                }
-                matchingCount += 1
-
-                if matchingCount > offset + limit {
-                    hasNextPage = true
-                    PerformanceTrace.record(
-                        "Wordbook post-fetch filter",
-                        elapsed: filterStart.duration(to: .now)
-                    )
-                    break candidateScan
-                }
-            }
-            PerformanceTrace.record(
-                "Wordbook post-fetch filter",
-                elapsed: filterStart.duration(to: .now)
-            )
-
-            candidateOffset += candidates.count
-            if candidates.count < batchSize {
-                exhaustedCandidates = true
-                break
-            }
-        }
+        let filterStart = ContinuousClock.now
+        let matches = sorted(
+            candidates.filter { matchesPostFetchFilters($0, using: filters) },
+            by: filters.sort
+        )
+        PerformanceTrace.record(
+            "Wordbook post-fetch filter",
+            elapsed: filterStart.duration(to: .now)
+        )
+        let pageWords = matches.dropFirst(offset).prefix(limit)
 
         return WordbookPage(
-            rows: rows,
-            matchingCount: matchingCount,
-            isMatchingCountExact: exhaustedCandidates,
-            hasNextPage: hasNextPage
+            rows: pageWords.map(WordbookRowViewData.init),
+            matchingCount: matches.count,
+            isMatchingCountExact: true,
+            hasNextPage: offset + pageWords.count < matches.count
         )
     }
 
@@ -729,7 +772,7 @@ struct WordbookService {
     ) -> FetchDescriptor<VocabularyWord> {
         let jlptLevel = filters.jlptLevel
         let hasJLPTLevel = jlptLevel != WordbookFilterValue.all.rawValue
-        let favoritesOnly = filters.favoritesOnly
+        let favoritesOnly = filters.favoritesOnly || filters.status == .favorite
         let sortBy = [
             SortDescriptor(\VocabularyWord.japanese, order: .forward),
             SortDescriptor(\VocabularyWord.kana, order: .forward)
@@ -815,17 +858,15 @@ struct WordbookService {
     private func needsPostFetchFilter(_ filters: WordbookFilters) -> Bool {
         !filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || filters.tag != WordbookFilterValue.all.rawValue
-            || filters.learningState != WordbookFilterValue.all.rawValue
             || filters.partOfSpeech != WordbookFilterValue.all.rawValue
+            || ![.all, .favorite].contains(filters.status)
+            || filters.sort != .defaultOrder
     }
 
     private func matchesPostFetchFilters(_ word: VocabularyWord, using filters: WordbookFilters) -> Bool {
-        let searchText = filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchText = normalizedSearchText(filters.searchText)
         if !searchText.isEmpty {
-            let matchesSearch = word.japanese.localizedCaseInsensitiveContains(searchText)
-                || word.kana.localizedCaseInsensitiveContains(searchText)
-                || word.chineseMeaning.localizedCaseInsensitiveContains(searchText)
-            if !matchesSearch {
+            if !matchesSearch(word, normalizedQuery: searchText) {
                 return false
             }
         }
@@ -840,13 +881,131 @@ struct WordbookService {
             return false
         }
 
-        if filters.learningState != WordbookFilterValue.all.rawValue {
-            guard word.progress?.state.rawValue == filters.learningState else {
-                return false
-            }
+        if !matchesStatus(word, status: filters.status) {
+            return false
         }
 
         return true
+    }
+
+    private func normalizedSearchText(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCompatibilityMapping
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+    }
+
+    private func matchesSearch(_ word: VocabularyWord, normalizedQuery: String) -> Bool {
+        let candidates = [
+            word.japanese,
+            word.kana,
+            word.chineseMeaning,
+            word.loanwordSourceTerm ?? "",
+            JapaneseRomajiFormatter.string(from: word.kana)
+        ]
+        return candidates.contains { candidate in
+            normalizedSearchText(candidate).contains(normalizedQuery)
+        }
+    }
+
+    private func matchesStatus(_ word: VocabularyWord, status: WordbookStatusFilter) -> Bool {
+        switch status {
+        case .all:
+            return true
+        case .new:
+            return word.progress == nil || word.progress?.state == .new
+        case .review:
+            return LearningStatePresentation.isReviewing(word.progress?.state)
+        case .mastered:
+            return word.progress?.state == .suspended
+        case .favorite:
+            return word.isFavorite
+        case .difficult:
+            return (word.progress?.lapseCount ?? 0) >= 2
+        }
+    }
+
+    func sorted(_ words: [VocabularyWord], by option: WordbookSortOption) -> [VocabularyWord] {
+        guard option != .defaultOrder else { return words }
+
+        return words.sorted { lhs, rhs in
+            switch option {
+            case .defaultOrder:
+                return false
+            case .recentlyStudied:
+                switch (lhs.progress?.lastReviewedAt, rhs.progress?.lastReviewedAt) {
+                case let (.some(lhsDate), .some(rhsDate)) where lhsDate != rhsDate:
+                    return lhsDate > rhsDate
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                default:
+                    return defaultWordOrder(lhs, rhs)
+                }
+            case .nextDue:
+                let lhsDue = meaningfulDueDate(for: lhs)
+                let rhsDue = meaningfulDueDate(for: rhs)
+                switch (lhsDue, rhsDue) {
+                case let (.some(lhsDate), .some(rhsDate)) where lhsDate != rhsDate:
+                    return lhsDate < rhsDate
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                default:
+                    return defaultWordOrder(lhs, rhs)
+                }
+            case .lapseCount:
+                let lhsCount = lhs.progress?.lapseCount ?? 0
+                let rhsCount = rhs.progress?.lapseCount ?? 0
+                if lhsCount != rhsCount {
+                    return lhsCount > rhsCount
+                }
+                return defaultWordOrder(lhs, rhs)
+            }
+        }
+    }
+
+    private func meaningfulDueDate(for word: VocabularyWord) -> Date? {
+        guard let progress = word.progress,
+              [.learning, .relearning, .review].contains(progress.state) else {
+            return nil
+        }
+        return progress.dueAt
+    }
+
+    private func defaultWordOrder(_ lhs: VocabularyWord, _ rhs: VocabularyWord) -> Bool {
+        if lhs.japanese != rhs.japanese {
+            return lhs.japanese < rhs.japanese
+        }
+        if lhs.kana != rhs.kana {
+            return lhs.kana < rhs.kana
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    func setFavorite(
+        _ isFavorite: Bool,
+        for word: VocabularyWord,
+        in context: ModelContext,
+        now: Date = Date()
+    ) throws {
+        let previousValue = word.isFavorite
+        let previousUpdatedAt = word.updatedAt
+        do {
+            word.isFavorite = isFavorite
+            word.updatedAt = now
+            try context.save()
+        } catch {
+            context.rollback()
+            word.isFavorite = previousValue
+            word.updatedAt = previousUpdatedAt
+            throw error
+        }
     }
 }
 
@@ -1002,6 +1161,7 @@ struct WordBookService {
                 learningWordCount: counts.learningWordCount,
                 reviewWordCount: counts.reviewWordCount,
                 dueReviewCount: counts.dueReviewCount,
+                masteredWordCount: counts.masteredWordCount,
                 createdAt: book.createdAt,
                 isSelected: selectedID == book.id
             )
@@ -1010,7 +1170,7 @@ struct WordBookService {
 
     nonisolated func summaryCounts(
         in container: ModelContainer,
-        wordBookID: UUID,
+        wordBookID: UUID?,
         now: Date = Date()
     ) async throws -> WordBookSummaryCounts {
         let store = WordBookSummarySnapshotStore(modelContainer: container)
@@ -1031,6 +1191,7 @@ struct WordBookService {
             learningWordCount: counts.learningWordCount,
             reviewWordCount: counts.reviewWordCount,
             dueReviewCount: counts.dueReviewCount,
+            masteredWordCount: counts.masteredWordCount,
             createdAt: book.createdAt,
             isSelected: selectedID == book.id
         )
@@ -1042,7 +1203,7 @@ struct WordBookService {
         now: Date = Date()
     ) -> WordBookSummary {
         let activeWords = book.words.filter { !$0.isArchived }
-        let newWordCount = activeWords.filter { $0.progress?.state == .new }.count
+        let newWordCount = activeWords.filter { $0.progress == nil || $0.progress?.state == .new }.count
         let learningWordCount = activeWords.filter { word in
             guard let state = word.progress?.state else {
                 return false
@@ -1051,6 +1212,7 @@ struct WordBookService {
             return state == .learning || state == .relearning
         }.count
         let reviewWordCount = activeWords.filter { $0.progress?.state == .review }.count
+        let masteredWordCount = activeWords.filter { $0.progress?.state == .suspended }.count
         let dueReviewCount = activeWords.filter { word in
             guard let progress = word.progress else {
                 return false
@@ -1068,6 +1230,7 @@ struct WordBookService {
             learningWordCount: learningWordCount,
             reviewWordCount: reviewWordCount,
             dueReviewCount: dueReviewCount,
+            masteredWordCount: masteredWordCount,
             createdAt: book.createdAt,
             isSelected: selectedID == book.id
         )
@@ -1257,12 +1420,22 @@ struct WordBookService {
 
 @ModelActor
 actor WordBookSummarySnapshotStore {
-    func summaryCounts(wordBookID: UUID, now: Date) throws -> WordBookSummaryCounts {
-        let words = try modelContext.fetch(FetchDescriptor<VocabularyWord>(
-            predicate: #Predicate { word in
-                word.wordBook?.id == wordBookID && !word.isArchived
-            }
-        ))
+    func summaryCounts(wordBookID: UUID?, now: Date) throws -> WordBookSummaryCounts {
+        let descriptor: FetchDescriptor<VocabularyWord>
+        if let wordBookID {
+            descriptor = FetchDescriptor<VocabularyWord>(
+                predicate: #Predicate { word in
+                    word.wordBook?.id == wordBookID && !word.isArchived
+                }
+            )
+        } else {
+            descriptor = FetchDescriptor<VocabularyWord>(
+                predicate: #Predicate { word in
+                    !word.isArchived
+                }
+            )
+        }
+        let words = try modelContext.fetch(descriptor)
         PerformanceTrace.fetch("WordBookService async summary VocabularyWord fetch", count: words.count)
 
         let start = ContinuousClock.now

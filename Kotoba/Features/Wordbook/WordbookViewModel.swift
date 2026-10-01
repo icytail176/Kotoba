@@ -43,12 +43,14 @@ final class WordbookViewModel: ObservableObject {
     @Published private(set) var hasNextPage = false
     @Published private(set) var isLoadingWords = false
     @Published private(set) var hasLoadedWords = false
+    @Published private(set) var progressSummary = WordBookSummaryCounts()
+    @Published private(set) var isLoadingProgressSummary = false
+    @Published private(set) var detailRefreshToken = 0
     @Published private(set) var optionSets = WordbookOptionSets(
         wordBooks: [],
         jlptLevels: [],
         partsOfSpeech: [],
-        tags: [],
-        learningStates: []
+        tags: []
     )
     @Published var filters = WordbookFilters() {
         didSet {
@@ -57,6 +59,7 @@ final class WordbookViewModel: ObservableObject {
                 selectedWordID = nil
                 selectedWordDetail = nil
                 scheduleWordReload(debounce: false, reloadOptionSets: true)
+                scheduleProgressSummaryReload()
             } else if filters.searchText != oldValue.searchText {
                 scheduleWordReload(debounce: true, reloadOptionSets: false)
             } else {
@@ -81,6 +84,7 @@ final class WordbookViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var wordLoadTask: Task<Void, Never>?
     private var optionSetLoadTask: Task<Void, Never>?
+    private var progressSummaryTask: Task<Void, Never>?
     private var selectedWordDetail: VocabularyWord?
     private var optionSetsCache: [String: WordbookOptionSets] = [:]
 
@@ -143,6 +147,7 @@ final class WordbookViewModel: ObservableObject {
                 currentWordBookID = currentWordBook?.id
                 try loadFirstPage(in: context)
                 scheduleOptionSetReload(in: context)
+                scheduleProgressSummaryReload()
             }
         } catch {
             errorMessage = "无法加载单词本：\(error.localizedDescription)"
@@ -258,13 +263,6 @@ final class WordbookViewModel: ObservableObject {
         wordPendingProgressReset = selectedWord
     }
 
-    func requestResetProgress(for id: UUID, context: ModelContext) {
-        guard let word = try? service.fetchWord(id: id, in: context) else { return }
-        selectedWordID = id
-        selectedWordDetail = word
-        wordPendingProgressReset = word
-    }
-
     func confirmResetProgress(context: ModelContext) {
         guard let word = wordPendingProgressReset else {
             return
@@ -274,9 +272,12 @@ final class WordbookViewModel: ObservableObject {
             try service.resetProgress(for: word, in: context)
             wordPendingProgressReset = nil
             selectedWordDetail = word
+            detailRefreshToken += 1
             invalidateOptionSetCache()
             loadWords(context: context, selectedWordBookID: currentWordBook?.id.uuidString ?? "")
         } catch {
+            wordPendingProgressReset = nil
+            loadSelectedWordDetail()
             errorMessage = "重置学习进度失败：\(error.localizedDescription)"
         }
     }
@@ -318,6 +319,19 @@ final class WordbookViewModel: ObservableObject {
     func clearSelection() {
         selectedWordID = nil
         selectedWordDetail = nil
+    }
+
+    func toggleFavoriteForSelectedWord(context: ModelContext) {
+        guard let selectedWord else {
+            return
+        }
+
+        do {
+            try service.setFavorite(!selectedWord.isFavorite, for: selectedWord, in: context)
+            try loadFirstPage(in: context)
+        } catch {
+            errorMessage = "保存收藏状态失败：\(error.localizedDescription)"
+        }
     }
 
     private func scheduleWordReload(debounce: Bool, reloadOptionSets: Bool) {
@@ -447,8 +461,7 @@ final class WordbookViewModel: ObservableObject {
             wordBooks: availableWordBooks.map { WordBookOption(id: $0.id, name: $0.name) },
             jlptLevels: [],
             partsOfSpeech: [],
-            tags: [],
-            learningStates: LearningState.allCases
+            tags: []
         )
         optionSetLoadTask = Task { [weak self] in
             await Task.yield()
@@ -461,6 +474,34 @@ final class WordbookViewModel: ObservableObject {
                 try self.reloadOptionSets(in: context)
             } catch {
                 self.errorMessage = "无法加载筛选选项：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func scheduleProgressSummaryReload() {
+        progressSummaryTask?.cancel()
+        guard let modelContext else { return }
+
+        let wordBookID = scopedWordBookID
+        let container = modelContext.container
+        let service = wordBookService
+        isLoadingProgressSummary = true
+        progressSummaryTask = Task { [weak self] in
+            do {
+                let counts = try await service.summaryCounts(
+                    in: container,
+                    wordBookID: wordBookID,
+                    now: Date()
+                )
+                guard !Task.isCancelled,
+                      let self,
+                      self.scopedWordBookID == wordBookID else { return }
+                self.progressSummary = counts
+                self.isLoadingProgressSummary = false
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                self.isLoadingProgressSummary = false
+                self.errorMessage = "无法加载学习进度：\(error.localizedDescription)"
             }
         }
     }

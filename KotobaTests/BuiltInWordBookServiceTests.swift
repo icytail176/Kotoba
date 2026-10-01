@@ -158,14 +158,21 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         let context = container.mainContext
         let definition = BuiltInWordBookDefinition(level: "N5", displayName: "JLPT N5", fileName: "test.csv")
         let defaults = try makeSeedDefaults()
-        defaults.set(5, forKey: AppSettings.builtInWordBookSeedVersionKey)
+        defaults.set(6, forKey: AppSettings.builtInWordBookSeedVersionKey)
         let dueAt = Date(timeIntervalSinceReferenceDate: 90_000)
         let book = WordBook(name: definition.displayName, isBuiltIn: true)
         let word = VocabularyWord(
-            japanese: "コンピューター", kana: "コンピューター", chineseMeaning: "电脑", jlptLevel: "N5",
+            japanese: "コンピューター", kana: "コンピューター", chineseMeaning: "升级前释义", jlptLevel: "N5",
             isFavorite: true, wordBook: book
         )
-        let progress = LearningProgress(state: .review, dueAt: dueAt, intervalDays: 30, reviewCount: 8, word: word)
+        let progress = LearningProgress(
+            state: .review,
+            dueAt: dueAt,
+            intervalDays: 30,
+            reviewCount: 8,
+            lapseCount: 3,
+            word: word
+        )
         let log = ReviewLog(
             rating: .good, previousState: .review, nextState: .review,
             previousIntervalDays: 15, nextIntervalDays: 30, scheduledDueAt: dueAt, word: word
@@ -194,9 +201,11 @@ final class BuiltInWordBookServiceTests: XCTestCase {
 
         let upgraded = try XCTUnwrap(context.fetch(FetchDescriptor<VocabularyWord>()).first)
         XCTAssertEqual(upgraded.id, originalID)
+        XCTAssertEqual(upgraded.chineseMeaning, "升级前释义")
         XCTAssertTrue(upgraded.isFavorite)
         XCTAssertEqual(upgraded.progress?.dueAt, dueAt)
         XCTAssertEqual(upgraded.progress?.reviewCount, 8)
+        XCTAssertEqual(upgraded.progress?.lapseCount, 3)
         XCTAssertEqual(upgraded.reviewLogs.first?.id, originalLogID)
         XCTAssertEqual(upgraded.loanwordSourceTerm, "computer")
         XCTAssertEqual(upgraded.loanwordSourceLanguageCode, "eng")
@@ -241,20 +250,28 @@ final class BuiltInWordBookServiceTests: XCTestCase {
             .appendingPathComponent("Kotoba/Resources/builtin_loanword_etymology.csv")
         let table = try CSVParser().parse(String(contentsOf: url, encoding: .utf8))
         XCTAssertEqual(table.headers, BuiltInWordBookService.etymologyHeaders)
-        XCTAssertEqual(table.rows.count, 46)
+        XCTAssertEqual(table.rows.count, 836)
         let parser = CSVParser()
         var builtInKeys = Set<String>()
+        var builtInRowsByKey: [String: CSVRecord] = [:]
         for definition in BuiltInWordBookDefinition.all {
             let wordTable = try parser.parse(
                 String(contentsOf: builtInResourceURL(for: definition), encoding: .utf8)
             )
             for row in wordTable.rows {
-                builtInKeys.insert(
-                    [definition.level, row.fields[0], row.fields[1]].joined(separator: "\u{1F}")
-                )
+                let key = [definition.level, row.fields[0], row.fields[1]].joined(separator: "\u{1F}")
+                builtInKeys.insert(key)
+                builtInRowsByKey[key] = row
             }
         }
         var keys = Set<String>()
+        var rowsByLevel: [String: Int] = [:]
+        var languageCounts: [String: Int] = [:]
+        var displayEligibleCount = 0
+        var chineseExcludedCount = 0
+        var otherExcludedCount = 0
+        var displayedWaseiCount = 0
+        var displayedPartialCount = 0
         for row in table.rows {
             XCTAssertEqual(row.fields.count, 7)
             let key = row.fields[0...2].joined(separator: "\u{1F}")
@@ -264,7 +281,261 @@ final class BuiltInWordBookServiceTests: XCTestCase {
             XCTAssertFalse(row.fields[4].isEmpty)
             XCTAssertNotNil(Bool(row.fields[5]))
             XCTAssertNotNil(Bool(row.fields[6]))
+            rowsByLevel[row.fields[0], default: 0] += 1
+            languageCounts[row.fields[4], default: 0] += 1
+
+            let isWasei = row.fields[5] == "true"
+            let isPartial = row.fields[6] == "true"
+            let shouldDisplay = LoanwordEtymologyDisplayPolicy.shouldDisplay(
+                sourceTerm: row.fields[3],
+                sourceLanguage: row.fields[4],
+                isWasei: isWasei,
+                isPartial: isPartial
+            )
+            if shouldDisplay {
+                displayEligibleCount += 1
+                displayedWaseiCount += isWasei ? 1 : 0
+                displayedPartialCount += isPartial ? 1 : 0
+            } else if LoanwordEtymologyDisplayPolicy.normalizedLanguage(for: row.fields[4]) == .chinese {
+                chineseExcludedCount += 1
+            } else {
+                otherExcludedCount += 1
+            }
         }
+        XCTAssertEqual(rowsByLevel, ["N5": 65, "N4": 70, "N3": 219, "N2": 235, "N1": 247])
+        XCTAssertEqual(languageCounts, [
+            "eng": 780,
+            "fre": 22,
+            "ger": 11,
+            "dut": 9,
+            "por": 6,
+            "ita": 4,
+            "chi": 2,
+            "lat": 1,
+            "rus": 1
+        ])
+        XCTAssertEqual(displayEligibleCount, 834)
+        XCTAssertEqual(chineseExcludedCount, 2)
+        XCTAssertEqual(otherExcludedCount, 0)
+        XCTAssertEqual(displayedWaseiCount, 15)
+        XCTAssertEqual(displayedPartialCount, 0)
+        XCTAssertEqual(table.rows.filter { $0.fields[5] == "true" }.count, 15)
+        XCTAssertEqual(table.rows.filter { $0.fields[6] == "true" }.count, 0)
+
+        let television = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N5" && $0.fields[1] == "テレビ" && $0.fields[2] == "テレビ"
+        })
+        XCTAssertEqual(television.fields[3], "television")
+        XCTAssertEqual(television.fields[4], "eng")
+        XCTAssertEqual(television.fields[5], "false")
+        XCTAssertEqual(television.fields[6], "false")
+
+        let english = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N4" && $0.fields[1] == "コンピューター"
+        })
+        XCTAssertEqual(english.fields[3...4], ["computer", "eng"])
+        let german = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N4" && $0.fields[1] == "アルバイト"
+        })
+        XCTAssertEqual(german.fields[3...4], ["Arbeit", "ger"])
+        let wasei = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N5" && $0.fields[1] == "ボールペン"
+        })
+        XCTAssertEqual(wasei.fields[3...5], ["ball pen", "eng", "true"])
+
+        let french = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N5" && $0.fields[1] == "レストラン"
+        })
+        XCTAssertEqual(french.fields[3...4], ["restaurant", "fre"])
+        XCTAssertTrue(LoanwordEtymologyDisplayPolicy.shouldDisplay(
+            sourceTerm: french.fields[3], sourceLanguage: french.fields[4],
+            isWasei: false, isPartial: false
+        ))
+
+        let portuguese = try XCTUnwrap(table.rows.first {
+            $0.fields[0] == "N5" && $0.fields[1] == "パン"
+        })
+        XCTAssertEqual(portuguese.fields[3...4], ["pão", "por"])
+        XCTAssertTrue(LoanwordEtymologyDisplayPolicy.shouldDisplay(
+            sourceTerm: portuguese.fields[3], sourceLanguage: portuguese.fields[4],
+            isWasei: false, isPartial: false
+        ))
+
+        let chineseRows = table.rows.filter {
+            LoanwordEtymologyDisplayPolicy.normalizedLanguage(for: $0.fields[4]) == .chinese
+        }
+        XCTAssertEqual(Set(chineseRows.map { $0.fields[1] }), ["ラーメン", "チャーハン"])
+        XCTAssertTrue(chineseRows.allSatisfy {
+            !LoanwordEtymologyDisplayPolicy.shouldDisplay(
+                sourceTerm: $0.fields[3], sourceLanguage: $0.fields[4],
+                isWasei: $0.fields[5] == "true", isPartial: $0.fields[6] == "true"
+            )
+        })
+
+        func cardPresentation(for sidecarRow: CSVRecord) throws -> StudyCardMeaningPresentation {
+            let key = sidecarRow.fields[0...2].joined(separator: "\u{1F}")
+            let builtInRow = try XCTUnwrap(builtInRowsByKey[key])
+            let word = VocabularyWord(
+                japanese: builtInRow.fields[0],
+                kana: builtInRow.fields[1],
+                chineseMeaning: builtInRow.fields[2],
+                jlptLevel: builtInRow.fields[6],
+                loanwordSourceTerm: sidecarRow.fields[3],
+                loanwordSourceLanguageCode: sidecarRow.fields[4],
+                loanwordIsWasei: sidecarRow.fields[5] == "true",
+                loanwordIsPartial: sidecarRow.fields[6] == "true"
+            )
+            return StudyCardMeaningPresentation.make(for: word)
+        }
+
+        let germanPresentation = try cardPresentation(for: german)
+        XCTAssertEqual(germanPresentation.sourceMetadata, "Arbeit（德语）")
+        XCTAssertEqual(germanPresentation.inlineText, "\(germanPresentation.meaning) · Arbeit（德语）")
+        let waseiPresentation = try cardPresentation(for: wasei)
+        XCTAssertEqual(waseiPresentation.sourceMetadata, "ball pen（和制英语）")
+        let frenchPresentation = try cardPresentation(for: french)
+        XCTAssertEqual(frenchPresentation.sourceMetadata, "restaurant（法语）")
+        let portuguesePresentation = try cardPresentation(for: portuguese)
+        XCTAssertEqual(portuguesePresentation.sourceMetadata, "pão（葡萄牙语）")
+        for chinese in chineseRows {
+            let presentation = try cardPresentation(for: chinese)
+            XCTAssertNil(presentation.sourceMetadata)
+            XCTAssertEqual(presentation.inlineText, presentation.meaning)
+            XCTAssertEqual(presentation.accessibilityText, "释义，\(presentation.meaning)")
+        }
+    }
+
+    func testBundledTelevisionEtymologyReachesPersistedWordAndCardPresentation() throws {
+        let parser = CSVParser()
+        let n5Definition = try XCTUnwrap(BuiltInWordBookDefinition.all.first { $0.level == "N5" })
+        let n5Table = try parser.parse(String(contentsOf: builtInResourceURL(for: n5Definition), encoding: .utf8))
+        let televisionWord = try XCTUnwrap(n5Table.rows.first {
+            $0.fields[0] == "テレビ" && $0.fields[1] == "テレビ"
+        })
+
+        let resourceDirectory = builtInResourceURL(for: n5Definition).deletingLastPathComponent()
+        let sidecarTable = try parser.parse(String(
+            contentsOf: resourceDirectory.appendingPathComponent("builtin_loanword_etymology.csv"),
+            encoding: .utf8
+        ))
+        let televisionSidecar = try XCTUnwrap(sidecarTable.rows.first {
+            $0.fields[0] == "N5" && $0.fields[1] == "テレビ" && $0.fields[2] == "テレビ"
+        })
+
+        XCTAssertEqual(televisionWord.fields[2], "电视")
+        XCTAssertTrue(televisionWord.fields[7].contains("音调:①"))
+        XCTAssertEqual(televisionSidecar.fields[3...6], ["television", "eng", "false", "false"])
+
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: n5Definition.fileName,
+            expectedWordCount: 1
+        )
+        let defaults = try makeSeedDefaults()
+        defaults.set(6, forKey: AppSettings.builtInWordBookSeedVersionKey)
+        let container = try makeInMemoryTestContainer()
+        let service = BuiltInWordBookService(
+            definitions: [definition],
+            dataProvider: { _ in Self.csvData(headers: n5Table.headers, fields: televisionWord.fields) },
+            etymologyDataProvider: {
+                Self.csvData(headers: sidecarTable.headers, fields: televisionSidecar.fields)
+            },
+            userDefaults: defaults
+        )
+
+        _ = try service.loadIfNeeded(in: container.mainContext)
+
+        let stored = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<VocabularyWord>()).first)
+        XCTAssertEqual(stored.japanese, "テレビ")
+        XCTAssertEqual(stored.kana, "テレビ")
+        XCTAssertEqual(stored.loanwordSourceTerm, "television")
+        XCTAssertEqual(stored.loanwordSourceLanguageCode, "eng")
+        XCTAssertFalse(stored.loanwordIsWasei)
+        XCTAssertFalse(stored.loanwordIsPartial)
+        XCTAssertEqual(
+            StudyCardMeaningPresentation.make(for: stored).inlineText,
+            "电视 · television（英语）"
+        )
+        XCTAssertEqual(JapaneseRomajiFormatter.string(from: stored.kana), "terebi")
+        XCTAssertEqual(PitchAccentPresentation.make(tags: stored.tags)?.displayText, "[1]")
+        XCTAssertEqual(defaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey), 8)
+    }
+
+    func testEtymologyMatcherNormalizesWidthReadingScriptAndWhitespaceWithoutExpressionOnlyFallback() throws {
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: "test.csv",
+            expectedWordCount: 2
+        )
+        let container = try makeInMemoryTestContainer()
+        let service = BuiltInWordBookService(
+            definitions: [definition],
+            dataProvider: { _ in
+                Data(
+                    "expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\nテレビ,テレビ,电视,名词,,,N5,外来语\nテレビ,てれびじょん,同形异读,名词,,,N5,外来语\n".utf8
+                )
+            },
+            etymologyDataProvider: {
+                Data(
+                    "wordBook,expression,reading,sourceTerm,sourceLanguage,isWasei,isPartial\nN5, ﾃﾚﾋﾞ , てれび ,television,eng,false,true\n".utf8
+                )
+            },
+            userDefaults: try makeSeedDefaults()
+        )
+
+        _ = try service.loadIfNeeded(in: container.mainContext)
+
+        let words = try container.mainContext.fetch(FetchDescriptor<VocabularyWord>())
+        XCTAssertEqual(words.first { $0.kana == "テレビ" }?.loanwordSourceTerm, "television")
+        XCTAssertNil(words.first { $0.kana == "てれびじょん" }?.loanwordSourceTerm)
+    }
+
+    func testArchivedEquivalentDoesNotBlockActiveWordEtymologyEnrichment() throws {
+        let definition = BuiltInWordBookDefinition(
+            level: "N5",
+            displayName: "JLPT N5",
+            fileName: "test.csv",
+            expectedWordCount: 1
+        )
+        let defaults = try makeSeedDefaults()
+        defaults.set(7, forKey: AppSettings.builtInWordBookSeedVersionKey)
+        let container = try makeInMemoryTestContainer()
+        let context = container.mainContext
+        let book = WordBook(name: definition.displayName, isBuiltIn: true)
+        let active = VocabularyWord(
+            japanese: "テレビ", kana: "テレビ", chineseMeaning: "电视", jlptLevel: "N5", wordBook: book
+        )
+        active.progress = LearningProgress(state: .review, intervalDays: 12, reviewCount: 5, word: active)
+        let archived = VocabularyWord(
+            japanese: "ﾃﾚﾋﾞ", kana: "てれび", chineseMeaning: "旧词", jlptLevel: "N5", isArchived: true, wordBook: book
+        )
+        archived.progress = LearningProgress(state: .review, intervalDays: 3, reviewCount: 2, word: archived)
+        context.insert(book)
+        context.insert(active)
+        context.insert(archived)
+        try context.save()
+
+        let service = BuiltInWordBookService(
+            definitions: [definition],
+            dataProvider: { _ in
+                Data("expression,reading,meaningChinese,partOfSpeech,exampleJapanese,exampleChinese,jlptLevel,tags\nテレビ,テレビ,电视,名词,,,N5,カタカナ語\n".utf8)
+            },
+            etymologyDataProvider: {
+                Data("wordBook,expression,reading,sourceTerm,sourceLanguage,isWasei,isPartial\nN5,テレビ,テレビ,television,eng,false,false\n".utf8)
+            },
+            userDefaults: defaults
+        )
+
+        _ = try service.loadIfNeeded(in: context)
+
+        XCTAssertEqual(active.loanwordSourceTerm, "television")
+        XCTAssertNil(archived.loanwordSourceTerm)
+        XCTAssertEqual(active.progress?.intervalDays, 12)
+        XCTAssertEqual(active.progress?.reviewCount, 5)
+        XCTAssertEqual(archived.progress?.intervalDays, 3)
+        XCTAssertEqual(defaults.integer(forKey: AppSettings.builtInWordBookSeedVersionKey), 8)
     }
 
     func testBundledSampleCSVDoesNotUseLeadingWaveHeadwordMarker() throws {
@@ -330,9 +601,16 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         let container = try makeInMemoryTestContainer()
         let context = container.mainContext
         let userDefaults = try makeSeedDefaults()
-        let service = BuiltInWordBookService(dataProvider: { definition in
-            try Data(contentsOf: self.builtInResourceURL(for: definition))
-        }, userDefaults: userDefaults)
+        let resourceDirectory = builtInResourceURL(for: BuiltInWordBookDefinition.all[0]).deletingLastPathComponent()
+        let service = BuiltInWordBookService(
+            dataProvider: { definition in
+                try Data(contentsOf: self.builtInResourceURL(for: definition))
+            },
+            etymologyDataProvider: {
+                try Data(contentsOf: resourceDirectory.appendingPathComponent("builtin_loanword_etymology.csv"))
+            },
+            userDefaults: userDefaults
+        )
 
         let firstLoad = try service.loadIfNeeded(in: context)
         let secondLoad = try service.loadIfNeeded(in: context)
@@ -344,6 +622,32 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         XCTAssertEqual(secondLoad.map(\.importedWordCount), [0, 0, 0, 0, 0])
         XCTAssertEqual(books.filter(\.isBuiltIn).count, 5)
         XCTAssertEqual(words.count, 10_609)
+        XCTAssertEqual(words.filter { $0.loanwordSourceTerm != nil }.count, 836)
+        XCTAssertEqual(words.filter { $0.loanwordSourceLanguageCode != nil }.count, 836)
+        XCTAssertEqual(words.filter(\.loanwordIsWasei).count, 15)
+        XCTAssertEqual(words.filter(\.loanwordIsPartial).count, 0)
+        let byLevel = Dictionary(grouping: words.filter { $0.loanwordSourceTerm != nil }, by: \.jlptLevel)
+            .mapValues(\.count)
+        XCTAssertEqual(byLevel, ["N5": 65, "N4": 70, "N3": 219, "N2": 235, "N1": 247])
+
+        let displayed = words.compactMap(LoanwordEtymologyPresentation.make(for:))
+        XCTAssertEqual(displayed.count, 834)
+        let storedButHidden = words.filter {
+            $0.loanwordSourceTerm != nil && LoanwordEtymologyPresentation.make(for: $0) == nil
+        }
+        XCTAssertEqual(storedButHidden.count, 2)
+        XCTAssertEqual(Set(storedButHidden.map(\.japanese)), ["ラーメン", "チャーハン"])
+
+        let ramen = try XCTUnwrap(words.first { $0.japanese == "ラーメン" && $0.jlptLevel == "N5" })
+        XCTAssertEqual(ramen.loanwordSourceTerm, "lāmiàn")
+        XCTAssertEqual(ramen.loanwordSourceLanguageCode, "chi")
+        XCTAssertEqual(StudyCardMeaningPresentation.make(for: ramen).inlineText, ramen.chineseMeaning)
+        XCTAssertEqual(StudyCardMeaningPresentation.make(for: ramen).accessibilityText, "释义，\(ramen.chineseMeaning)")
+
+        let unresolved = try XCTUnwrap(words.first { $0.japanese == "カラオケ" && $0.jlptLevel == "N4" })
+        XCTAssertNil(unresolved.loanwordSourceTerm)
+        XCTAssertNil(LoanwordEtymologyPresentation.make(for: unresolved))
+        XCTAssertEqual(StudyCardMeaningPresentation.make(for: unresolved).inlineText, unresolved.chineseMeaning)
     }
 
     func testCurrentCompleteSeedSkipsResourceReads() throws {
@@ -944,5 +1248,12 @@ final class BuiltInWordBookServiceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
+    }
+
+    private static func csvData(headers: [String], fields: [String]) -> Data {
+        let row = fields.map { field in
+            "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }.joined(separator: ",")
+        return Data("\(headers.joined(separator: ","))\n\(row)\n".utf8)
     }
 }

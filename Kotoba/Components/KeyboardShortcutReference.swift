@@ -23,11 +23,15 @@ struct KeyboardShortcutReference {
             Item(action: "忘记 / 模糊 / 认识", keys: "1 / 2 / 3"),
             Item(action: "熟练", keys: "Delete / Backspace"),
             Item(action: "切换卡片页", keys: "← / →"),
-            Item(action: "收藏或取消收藏", keys: "F")
+            Item(action: "收藏或取消收藏", keys: "F"),
+            Item(action: "退出本组", keys: "Escape")
         ]),
         Section(title: "拼写", items: [
             Item(action: "提交 / 下一题", keys: "Enter"),
             Item(action: "显示假名提示（第一轮）", keys: "⌘⇧H")
+        ]),
+        Section(title: "学习小结", items: [
+            Item(action: "返回首页", keys: "Enter")
         ]),
         Section(title: "搜索", items: [
             Item(action: "聚焦单词搜索", keys: "⌘F"),

@@ -35,7 +35,7 @@ enum WordBookEditorMode: Identifiable {
 struct WordBookPreviewFilters: Equatable {
     var jlptLevel = WordbookFilterValue.all.rawValue
     var partOfSpeech = WordbookFilterValue.all.rawValue
-    var learningState = WordbookFilterValue.all.rawValue
+    var status = WordbookStatusFilter.all
 }
 
 @MainActor
@@ -49,8 +49,7 @@ final class WordBookManagementViewModel: ObservableObject {
         wordBooks: [],
         jlptLevels: [],
         partsOfSpeech: [],
-        tags: [],
-        learningStates: []
+        tags: []
     )
     @Published private(set) var selectedPreviewMatchingCount = 0
     @Published private(set) var isLoadingSelectedPreview = false
@@ -288,8 +287,7 @@ final class WordBookManagementViewModel: ObservableObject {
                 wordBooks: [],
                 jlptLevels: [],
                 partsOfSpeech: [],
-                tags: [],
-                learningStates: []
+                tags: []
             )
             selectedPreviewMatchingCount = 0
             errorMessage = "无法加载词书预览：\(error.localizedDescription)"
@@ -345,8 +343,7 @@ final class WordBookManagementViewModel: ObservableObject {
                 wordBooks: [],
                 jlptLevels: [],
                 partsOfSpeech: [],
-                tags: [],
-                learningStates: []
+                tags: []
             )
             return
         }
@@ -382,7 +379,7 @@ final class WordBookManagementViewModel: ObservableObject {
         var filters = WordbookFilters(wordBookID: WordbookFilterValue.all.rawValue)
         filters.jlptLevel = previewFilters.jlptLevel
         filters.partOfSpeech = previewFilters.partOfSpeech
-        filters.learningState = previewFilters.learningState
+        filters.status = previewFilters.status
 
         let page = try PerformanceTrace.measure("Wordbook management detail page query") {
             try wordbookService.fetchWordPage(

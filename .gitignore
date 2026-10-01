@@ -30,7 +30,8 @@ Package.resolved
 .env.*
 
 # Local data-audit inputs and tooling
-/Scripts/
+/Scripts/*
+!/Scripts/generate_loanword_etymology.py
 /Kotoba/Resources/original_backup/
 /pre_conjugation_audit_backup/
 /Kotoba_BuiltIn_Conjugation_Corrections.csv

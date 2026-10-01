@@ -158,6 +158,9 @@ struct TodayStudyView: View {
                 }
             }
         }
+        .onExitCommand {
+            isSessionExitConfirmationPresented = true
+        }
     }
 
     @ViewBuilder
@@ -184,11 +187,30 @@ struct TodayStudyView: View {
                         .onTapGesture {
                             closeSearchFromOutside()
                         }
+                    reviewForecastSection
+                        .onTapGesture {
+                            closeSearchFromOutside()
+                        }
+                    if viewModel.snapshot.isBuiltInWordBook {
+                        builtInAttribution
+                    }
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var builtInAttribution: some View {
+        let attribution = AppAttribution.builtInVocabulary
+        return HStack(spacing: 8) {
+            Text("JLPT 内置词书数据来源：\(attribution.shortName)")
+            Link("查看来源与许可", destination: attribution.url)
+                .accessibilityLabel("查看 JLPT 内置词书数据来源与许可")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .contain)
     }
 
     private var noWordBookState: some View {
@@ -412,7 +434,19 @@ struct TodayStudyView: View {
             HomeMetricView(title: "剩余新词", value: "\(viewModel.snapshot.remainingNewWordCount)")
             HomeMetricView(title: "当前待复习", value: "\(viewModel.snapshot.dueReviewCount)")
             HomeMetricView(title: "词书总词数", value: "\(viewModel.snapshot.totalWordCount)")
-            HomeMetricView(title: "已进入复习", value: "\(viewModel.snapshot.masteredWordCount)")
+            HomeMetricView(title: "复习中", value: "\(viewModel.snapshot.reviewingWordCount)")
+            HomeMetricView(title: "已熟练", value: "\(viewModel.snapshot.masteredWordCount)")
+        }
+    }
+
+    private var reviewForecastSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("未来 7 天复习预测")
+                .font(.headline)
+            Text("逾期项目计入今天；新词、已熟练和已归档词条不计入预测。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ReviewForecastChart(buckets: viewModel.snapshot.reviewForecast)
         }
     }
 
@@ -728,6 +762,50 @@ private struct HomeMetricView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ReviewForecastChart: View {
+    let buckets: [ReviewForecastBucket]
+
+    private var maximum: Int {
+        max(1, buckets.map(\.reviewCount).max() ?? 1)
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            ForEach(buckets) { bucket in
+                VStack(spacing: 6) {
+                    Text("\(bucket.reviewCount)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(bucket.reviewCount == 0 ? Color.secondary.opacity(0.16) : Color.accentColor)
+                        .frame(
+                            height: bucket.reviewCount == 0
+                                ? 4
+                                : max(8, CGFloat(bucket.reviewCount) / CGFloat(maximum) * 82)
+                        )
+                    Text(label(for: bucket))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(label(for: bucket))，预计复习 \(bucket.reviewCount) 个词")
+            }
+        }
+        .frame(height: 126, alignment: .bottom)
+        .padding(14)
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func label(for bucket: ReviewForecastBucket) -> String {
+        switch bucket.dayOffset {
+        case 0: return "今天"
+        case 1: return "明天"
+        default: return "\(bucket.dayOffset)天后"
+        }
     }
 }
 

@@ -4,6 +4,17 @@ import SwiftData
 
 @MainActor
 final class StudySessionViewModel: ObservableObject {
+    private struct PendingRatingAttempt {
+        enum Kind {
+            case formal(ReviewRating)
+            case reinforcementMastered
+        }
+
+        let kind: Kind
+        let itemID: UUID
+        let now: Date
+    }
+
     enum SpellingOutcome: Equatable {
         case correct, correctedAfterRetry, correctedAfterHint, notRequired
 
@@ -134,6 +145,7 @@ final class StudySessionViewModel: ObservableObject {
     private let queueService: StudyQueueService
     private let scheduler: ReviewScheduler
     private let conjugationEngine: ConjugationEngine
+    private let saveRatingChanges: (ModelContext) throws -> Void
     private let saveSpellingResults: (ModelContext) throws -> Void
     private var submittedWordIDs = Set<UUID>()
     private var reviewLogsByWordID: [UUID: ReviewLog] = [:]
@@ -142,17 +154,20 @@ final class StudySessionViewModel: ObservableObject {
     private var reviewedCount = 0
     private var newWordCount = 0
     private var lapseCount = 0
+    private var pendingRatingAttempt: PendingRatingAttempt?
     private var pendingSpellingSummary: SpellingSessionViewModel.Summary?
 
     init(
         queueService: StudyQueueService? = nil,
         scheduler: ReviewScheduler? = nil,
         conjugationEngine: ConjugationEngine? = nil,
+        saveRatingChanges: ((ModelContext) throws -> Void)? = nil,
         saveSpellingResults: ((ModelContext) throws -> Void)? = nil
     ) {
         self.queueService = queueService ?? StudyQueueService()
         self.scheduler = scheduler ?? DefaultReviewScheduler()
         self.conjugationEngine = conjugationEngine ?? ConjugationEngine()
+        self.saveRatingChanges = saveRatingChanges ?? { try $0.save() }
         self.saveSpellingResults = saveSpellingResults ?? { try $0.save() }
     }
 
@@ -167,7 +182,11 @@ final class StudySessionViewModel: ObservableObject {
         return "\(min(currentIndex + 1, session.items.count)) / \(session.items.count)"
     }
     var completedGroupWordCount: Int { reviewedCount }
+    var hasRecoverableRatingSaveFailure: Bool { pendingRatingAttempt != nil && errorMessage != nil }
     var hasRecoverableSpellingSaveFailure: Bool { pendingSpellingSummary != nil && errorMessage != nil }
+
+    func cardRetryCount(for wordID: UUID) -> Int { retryCountsByWordID[wordID] ?? 0 }
+    func sessionResult(for wordID: UUID) -> WordSessionResult? { outcomesByWordID[wordID] }
 
     func loadSession(
         context: ModelContext,
@@ -220,7 +239,11 @@ final class StudySessionViewModel: ObservableObject {
     }
 
     func submitRating(_ rating: ReviewRating, context: ModelContext, now: Date = Date()) {
-        guard isAnswerVisible, !isSubmittingRating, let item = currentItem, let progress = item.word.progress else { return }
+        guard isAnswerVisible,
+              !isSubmittingRating,
+              pendingRatingAttempt == nil,
+              let item = currentItem,
+              let progress = item.word.progress else { return }
         isSubmittingRating = true
         defer { isSubmittingRating = false }
 
@@ -230,41 +253,101 @@ final class StudySessionViewModel: ObservableObject {
             return
         }
 
+        handleFormalRating(rating, item: item, progress: progress, context: context, now: now)
+    }
+
+    func retrySavingRating(context: ModelContext) {
+        guard !isSubmittingRating,
+              let pendingRatingAttempt,
+              let item = currentItem,
+              item.id == pendingRatingAttempt.itemID,
+              let progress = item.word.progress else { return }
+        isSubmittingRating = true
+        defer { isSubmittingRating = false }
+        errorMessage = nil
+
+        switch pendingRatingAttempt.kind {
+        case .formal(let rating):
+            handleFormalRating(rating, item: item, progress: progress, context: context, now: pendingRatingAttempt.now)
+        case .reinforcementMastered:
+            handleReinforcement(.easy, item: item, progress: progress, context: context, now: pendingRatingAttempt.now)
+        }
+    }
+
+    func cancelRatingSaveFailure() {
+        guard pendingRatingAttempt != nil else { return }
+        pendingRatingAttempt = nil
+        errorMessage = nil
+    }
+
+    private func handleFormalRating(
+        _ rating: ReviewRating,
+        item: StudySession.Item,
+        progress: LearningProgress,
+        context: ModelContext,
+        now: Date
+    ) {
         let previousState = progress.state
         let previousIntervalDays = progress.intervalDays
-        let result = scheduler.schedule(
-            currentState: previousState,
-            currentIntervalDays: previousIntervalDays,
-            reviewCount: progress.reviewCount,
-            lapseCount: progress.lapseCount,
-            rating: rating,
-            now: now
-        )
-        apply(result, to: progress, now: now)
-        let log = ReviewLog(
-            reviewedAt: now,
-            rating: rating,
-            previousState: previousState,
-            nextState: result.learningState,
-            previousIntervalDays: previousIntervalDays,
-            nextIntervalDays: result.intervalDays,
-            scheduledDueAt: result.nextReviewAt,
-            errorTypes: rating == .again ? [.meaning] : [],
-            word: item.word
-        )
-        item.word.reviewLogs.append(log)
-        item.word.updatedAt = now
-        context.insert(log)
 
         do {
-            try context.save()
+            let previousFormalRating = try latestFormalReviewLog(for: item.word, in: context)?.rating
+            let scheduledResult = scheduler.schedule(
+                currentState: previousState,
+                currentIntervalDays: previousIntervalDays,
+                reviewCount: progress.reviewCount,
+                lapseCount: progress.lapseCount,
+                rating: rating,
+                now: now
+            )
+            let shouldAutoMaster = AutoMasteryPolicy.shouldAutoMaster(
+                progressBeforeRating: AutoMasteryProgressSnapshot(
+                    state: previousState,
+                    intervalDays: previousIntervalDays,
+                    isArchived: item.word.isArchived
+                ),
+                previousFormalRating: previousFormalRating,
+                currentRating: rating
+            )
+            let result = shouldAutoMaster
+                ? ReviewScheduleResult(
+                    learningState: .suspended,
+                    intervalDays: 0,
+                    nextReviewAt: now,
+                    didLapse: false,
+                    reviewCount: scheduledResult.reviewCount,
+                    lapseCount: scheduledResult.lapseCount
+                )
+                : scheduledResult
+
+            apply(result, to: progress, now: now)
+            let log = ReviewLog(
+                reviewedAt: now,
+                rating: rating,
+                previousState: previousState,
+                nextState: result.learningState,
+                previousIntervalDays: previousIntervalDays,
+                nextIntervalDays: result.intervalDays,
+                scheduledDueAt: result.nextReviewAt,
+                errorTypes: rating == .again ? [.meaning] : [],
+                word: item.word
+            )
+            item.word.reviewLogs.append(log)
+            item.word.updatedAt = now
+            context.insert(log)
+
+            // Progress and its one formal ReviewLog are saved atomically. The
+            // session-memory commit below happens only after persistence wins.
+            try saveRatingChanges(context)
             StudyStatisticsService.invalidateCache()
+            pendingRatingAttempt = nil
+            errorMessage = nil
             submittedWordIDs.insert(item.id)
             reviewLogsByWordID[item.id] = log
             reviewedCount += 1
             if item.kind == .newWord { newWordCount += 1 }
             if result.didLapse { lapseCount += 1 }
-            let requiresSpelling = rating != .easy
+            let requiresSpelling = result.learningState != .suspended
             outcomesByWordID[item.id] = makeOutcome(
                 item: item,
                 rating: rating,
@@ -277,6 +360,7 @@ final class StudySessionViewModel: ObservableObject {
             advance(context: context, now: now)
         } catch {
             context.rollback()
+            pendingRatingAttempt = PendingRatingAttempt(kind: .formal(rating), itemID: item.id, now: now)
             errorMessage = "评价保存失败：\(error.localizedDescription)"
         }
     }
@@ -365,15 +449,51 @@ final class StudySessionViewModel: ObservableObject {
         context: ModelContext,
         now: Date
     ) {
-        retryCountsByWordID[item.id, default: 0] += 1
-        outcomesByWordID[item.id]?.cardRetryCount = retryCountsByWordID[item.id] ?? 0
-
         if rating == .easy {
             progress.state = .suspended
             progress.intervalDays = 0
             progress.dueAt = now
             progress.updatedAt = now
             item.word.updatedAt = now
+            do {
+                // Reinforcement Mastered is an explicit user override. It may
+                // suspend progress, but never creates or rewrites a ReviewLog.
+                // Session-memory changes commit only after this save succeeds.
+                try saveRatingChanges(context)
+                StudyStatisticsService.invalidateCache()
+                pendingRatingAttempt = nil
+                errorMessage = nil
+                commitReinforcementMemory(rating, item: item, context: context, now: now)
+            } catch {
+                context.rollback()
+                pendingRatingAttempt = PendingRatingAttempt(
+                    kind: .reinforcementMastered,
+                    itemID: item.id,
+                    now: now
+                )
+                errorMessage = "强化熟练保存失败：\(error.localizedDescription)"
+            }
+            return
+        }
+
+        // Again / Hard / Good reinforcement is session-only: no scheduler,
+        // ReviewLog, reviewCount, lapse, interval, due date, or save operation.
+        pendingRatingAttempt = nil
+        errorMessage = nil
+        commitReinforcementMemory(rating, item: item, context: context, now: now)
+    }
+
+    private func commitReinforcementMemory(
+        _ rating: ReviewRating,
+        item: StudySession.Item,
+        context: ModelContext,
+        now: Date
+    ) {
+        let retryCount = (retryCountsByWordID[item.id] ?? 0) + 1
+        retryCountsByWordID[item.id] = retryCount
+        outcomesByWordID[item.id]?.cardRetryCount = retryCount
+
+        if rating == .easy {
             spellingWords.removeAll { $0.id == item.id }
             outcomesByWordID[item.id]?.isMastered = true
             outcomesByWordID[item.id]?.expressionRequiresSpelling = false
@@ -381,20 +501,26 @@ final class StudySessionViewModel: ObservableObject {
             outcomesByWordID[item.id]?.nextState = .suspended
             outcomesByWordID[item.id]?.nextReviewAt = now
             outcomesByWordID[item.id]?.intervalDays = 0
-            // The ReviewLog is immutable session history for the first formal
-            // rating. Reinforcement may change the final progress/UI outcome,
-            // but must not rewrite an earlier Again into Easy.
         } else if rating == .again {
             enqueue(item)
         }
 
-        do {
-            try context.save()
-            advance(context: context, now: now)
-        } catch {
-            context.rollback()
-            errorMessage = "强化结果保存失败：\(error.localizedDescription)"
-        }
+        advance(context: context, now: now)
+    }
+
+    private func latestFormalReviewLog(
+        for word: VocabularyWord,
+        in context: ModelContext
+    ) throws -> ReviewLog? {
+        let wordID = word.id
+        var descriptor = FetchDescriptor<ReviewLog>(
+            predicate: #Predicate { log in
+                log.word?.id == wordID
+            },
+            sortBy: [SortDescriptor(\.reviewedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
     }
 
     private func enqueue(_ item: StudySession.Item) {
@@ -488,6 +614,7 @@ final class StudySessionViewModel: ObservableObject {
         readingSpellingQuestions = []
         summary = nil
         errorMessage = nil
+        pendingRatingAttempt = nil
         pendingSpellingSummary = nil
         submittedWordIDs.removeAll()
         reviewLogsByWordID.removeAll()
