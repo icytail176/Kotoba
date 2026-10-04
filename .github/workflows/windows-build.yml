@@ -1,0 +1,116 @@
+name: Kotoba Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/windows-client
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows MSVC build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+
+      - name: Use npm 11
+        run: npm install --global npm@11
+
+      - name: Set up stable Rust MSVC
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Record native environment
+        run: |
+          Write-Output "Runner OS: $env:RUNNER_OS / $env:RUNNER_ARCH"
+          Write-Output "Image: $env:ImageOS / $env:ImageVersion"
+          Write-Output "Commit: $env:GITHUB_SHA"
+          node --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc --version --verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory | Select-Object -ExpandProperty Name
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend check
+        run: npm run check -- --fail-on-warnings
+
+      - name: Frontend build
+        run: npm run build
+
+      - name: Rust formatting
+        working-directory: windows/src-tauri
+        run: cargo fmt --check
+
+      - name: Rust check
+        working-directory: windows/src-tauri
+        run: cargo check --locked
+
+      - name: Rust clippy
+        working-directory: windows/src-tauri
+        run: cargo clippy --locked -- -D warnings
+
+      - name: Tauri Windows build
+        run: npm run tauri build -- --ci
+
+      - name: Verify Windows output
+        run: |
+          $executable = Get-Item "src-tauri/target/release/kotoba-windows.exe"
+          if ($executable.Length -le 0) { throw "Windows executable is empty" }
+          $installers = @(Get-ChildItem "src-tauri/target/release/bundle" -Recurse -File | Where-Object {
+            ($_.Directory.Name -eq 'nsis' -and $_.Extension -eq '.exe') -or
+            ($_.Directory.Name -eq 'msi' -and $_.Extension -eq '.msi')
+          })
+          if ($installers.Count -eq 0) { throw "No Windows installer was generated" }
+          foreach ($file in @($executable) + $installers) {
+            if ($file.Length -le 0) { throw "Empty output: $($file.FullName)" }
+            Write-Output "$($file.FullName) | $($file.Length) bytes"
+            Get-FileHash $file.FullName -Algorithm SHA256 | Format-List
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotoba-windows-phase1
+          path: |
+            windows/src-tauri/target/release/kotoba-windows.exe
+            windows/src-tauri/target/release/bundle/nsis/*.exe
+            windows/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 7
