@@ -86,6 +86,10 @@ jobs:
         working-directory: windows/src-tauri
         run: cargo clippy --locked -- -D warnings
 
+      - name: Rust tests (including file-backed SQLite)
+        working-directory: windows/src-tauri
+        run: cargo test --locked
+
       - name: Tauri Windows build
         run: npm run tauri build -- --ci
 

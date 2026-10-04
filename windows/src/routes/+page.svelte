@@ -8,10 +8,28 @@
     phase: number;
   }
 
+  interface DatabaseInfo {
+    schemaVersion: number;
+    location: string;
+    tableCounts: {
+      wordBooks: number;
+      vocabularyWords: number;
+      learningProgress: number;
+      reviewLogs: number;
+    };
+  }
+
+  let databaseInfo = $state<DatabaseInfo | null>(null);
+  let databaseError = $state<string | null>(null);
   let appInfo = $state<AppInfo | null>(null);
   let errorMessage = $state<string | null>(null);
 
   onMount(() => {
+    invoke<DatabaseInfo>("database_info")
+      .then((info) => { databaseInfo = info; })
+      .catch((error: unknown) => {
+        databaseError = error instanceof Error ? error.message : String(error);
+      });
     invoke<AppInfo>("app_info")
       .then((info) => { appInfo = info; })
       .catch((error: unknown) => {
@@ -23,7 +41,7 @@
 <main>
   <h1>Kotoba</h1>
   <p lang="en">Windows client prototype</p>
-  <p lang="en">Phase 0</p>
+  <p lang="en">Phase 2</p>
   <p class="japanese">日本語 · ことば · 漢字 · カタカナ</p>
   <div class="status" role="status" lang="en">
     {#if errorMessage}
@@ -33,6 +51,13 @@
       <p>{appInfo.name} · {appInfo.platform} · Phase {appInfo.phase}</p>
     {:else}
       <p>Connecting to Rust…</p>
+    {/if}
+    {#if databaseError}
+      <p>Database unavailable: {databaseError}</p>
+    {:else if databaseInfo}
+      <p>Database connected · Schema {databaseInfo.schemaVersion}</p>
+    {:else}
+      <p>Connecting to database…</p>
     {/if}
   </div>
 </main>
