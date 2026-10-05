@@ -1,6 +1,6 @@
 # Kotoba Windows Phase 2 Report
 
-日期：2026-10-04。PHASE 2 — Cross-Platform Data Contract + Windows SQLite Foundation。
+审计与实现验证日期：2026-10-04；报告定稿：2026-10-05。PHASE 2 — Cross-Platform Data Contract + Windows SQLite Foundation。
 
 ## Repository
 
@@ -8,7 +8,9 @@
 - Base HEAD / PHASE_1_HEAD: `0b1e24f4567f93e32b6c6cf60b8a3c6099a4f53a`（documentation-only）
 - Validated Phase 1 source SHA: `956e510dff35aa848613386a9ca8c3f40a03eb00`
 - 起始 working tree: clean；未覆盖用户修改。
-- Final implementation HEAD: pending commit / Windows CI verification.
+- Final HEAD / validated Phase 2 implementation: `e356285384262d5479bae34494f8ed9859e185e6`，commit `Add Windows SQLite data foundation`。
+- 报告定稿与契约文字勘误是后续 documentation-only commit，不改变 runtime/tests/workflow。最终 branch tip SHA 由最终聊天与 `git rev-parse HEAD` 给出（报告不能嵌入包含其自身的 commit hash）；该后续提交正常 push，完整 CI 不跳过。
+- Implementation commit 已正常推送 origin/feature/windows-client；实现 CI 下方列出。
 - 不 squash/rewrite 历史，不 merge main、不创建 PR/tag/Release。
 
 ## macOS Audit
@@ -54,9 +56,9 @@ Progress / log 在 Windows 必须引用有效 word；Mac SwiftData 关系 option
 
 ## SQLite
 
-- Library: rusqlite 0.40.2，libsqlite3-sys 0.38.2；Cargo.lock 固定解析。
+- Library: rusqlite 0.40.2，libsqlite3-sys 0.38.2，bundled SQLite 3.53.2；Cargo.lock 固定解析。
 - SQLite mode: bundled，原生静态编入，无独立 SQLite DLL 安装要求。
-- Compatibility: 当前 stable 版本由官方 docs.rs / Cargo 解析确认；本地 Rust/Cargo 1.99.0、Tauri 2.12.1 编译通过；Windows native 结果待下方 CI 验证。
+- Compatibility: 当前 stable 版本由官方 docs.rs / Cargo 解析确认；本地 Rust/Cargo 1.99.0、Tauri 2.12.1 编译通过；Windows native MSVC cargo check/test/clippy/Tauri build 全部通过。
 - Production path: Tauri app.path().app_data_dir() / kotoba.sqlite3；identifier com.fumi.kotoba.windows。不写 repo/cwd/exe 目录，不 hard-code 用户路径。
 - Mac dev app-data 与原生 com.fumi.Kotoba SwiftData 分离；本次没有读取原生用户 SwiftData store。
 - Database schema: **Windows SQLite Schema 1**，不是 SwiftData V3。
@@ -133,14 +135,39 @@ Tests 仅 in-memory/tempfile；不调用 production app-data resolver，不读�
 
 ## Windows CI
 
-Pending push and full native Windows MSVC verification. Existing workflow 仅新增 `cargo test --locked` step，保留 npm ci/check/build、fmt/check/clippy、Tauri build 和 artifacts。
+Run ID: **37203592859**
+Run URL: [Windows Phase 2 implementation validation](https://github.com/icytail176/Kotoba/actions/runs/37203592859)
+Head SHA: `e356285384262d5479bae34494f8ed9859e185e6`
+Job ID: 111440074475
+Status: **completed / success**
+Duration: 11m49s（2026-10-04 12:52:08–13:03:57 UTC / 上海 20:52:08–21:03:57）。
 
-Run ID: pending
-Run URL: pending
-Status: pending
-Windows cargo test: pending
-Windows native temporary SQLite file test: pending
-Windows Tauri build: pending
+| Native Windows step | Result |
+|---|---|
+| npm ci | PASS |
+| frontend check / build | PASS / PASS |
+| cargo fmt / check / clippy -D warnings | PASS / PASS / PASS |
+| cargo test --locked | **PASS，21 passed / 0 failed / 0 ignored** |
+| file_backed_migration_crud_reopen_is_idempotent | **PASS**：native Windows tempfile 文件 / migration / 四实体 CRUD / close / reopen |
+| migration_failure_rolls_back_and_preserves_file | PASS |
+| Tauri Windows build | PASS |
+| Verify Windows output / Upload artifacts | PASS / PASS |
+
+实际 environment：windows-latest，win25-vs2026 image 20260925.250.1；x86_64-pc-windows-msvc；Node 26.10.0、npm 11.21.0、Rust/Cargo 1.99.0。测试在 Windows 编译并执行 bundled SQLite，没有降级为仅编译验证。
+
+Workflow 仅新增 cargo test --locked step，没有 skip tests / continue-on-error / 删除 clippy / 关闭 FK / 移除 migration test。
+
+原有 bundle pipeline 无回归：
+
+| Output | CI verified size |
+|---|---:|
+| kotoba-windows.exe | 5,917,696 bytes |
+| Kotoba_0.1.0_x64_en-US.msi | 2,957,312 bytes |
+| Kotoba_0.1.0_x64-setup.exe | 2,116,811 bytes |
+
+Artifact name 保持既有 `kotoba-windows-phase1`（workflow 仅最小新增 tests），ID **11303358734**；[artifact](https://github.com/icytail176/Kotoba/actions/runs/37203592859/artifacts/11303358734)。本阶段未下载/运行新 installer。
+
+报告定稿为后续文档提交，完整 pipeline 会再运行；本表记录已完成的实现提交 CI，避免把文档 commit 当作上述 run 的 source SHA。
 
 ## Dependencies
 
@@ -168,4 +195,4 @@ npm dependency changes: **none**；package.json/package-lock.json 未改变。np
 
 ## Phase 2 Result
 
-**PENDING WINDOWS CI**。本地 audit/storage/tests/UI 验证均 PASS；stable-ID gate 仍 NOT READY。本阶段允许完成不依赖真实词库身份的 SQLite infrastructure；不得据此宣称 Phase 3 的词库身份问题已解决。
+**PASS**。本地 audit/storage/tests/UI 与 native Windows CI 验证均 PASS；stable-ID gate 仍 NOT READY。本阶段允许完成不依赖真实词库身份的 SQLite infrastructure；不得据此宣称 Phase 3 的词库身份问题已解决。

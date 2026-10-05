@@ -19,7 +19,7 @@
 Read-only audit sources（路径相对 repository root）：
 
 - `Kotoba/Models/KotobaSchema.swift`：active `KotobaSchemaV3`，version `3.0.0`，四个顶层模型；V1 → V2 → V3 均为 lightweight migration。
-- `Kotoba/Models/KotobaStore.swift`：实际 container 采用上述 schema / migration plan。
+- `Kotoba/Services/KotobaStore.swift`：实际 container 采用上述 schema / migration plan。
 - `Kotoba/Models/KotobaSchemaV1.swift`、`KotobaSchemaV2.swift`：嵌套 frozen compatibility models，仅服务旧 store migration。
 - `Kotoba/Models/WordBook.swift`、`VocabularyWord.swift`、`LearningProgress.swift`、`ReviewLog.swift`：V3 字段和关系。`LearningProgress.swift` 同时定义 `StudyDuePolicy`。
 - `Kotoba/Models/LearningState.swift`、`ReviewRating.swift`：真实 persisted raw values。
@@ -245,7 +245,7 @@ SRS states / rating 使用上述稳定 TEXT raw 值；不依赖 enum ordinal。e
 
 ## Backup V3 audit
 
-`KotobaBackupService.schemaVersion = 3`。Payload 包含 schemaVersion / exportedAt / appVersion，以及 wordBooks / words / progresses / reviewLogs 四数组；每实体输出 UUID id，wordBookID / wordID 输出关系 UUID，不序列化 SwiftData 对象地址。
+`KotobaBackupService.schemaVersion = 3`。Payload 包含 schemaVersion / exportedAt / appVersion，以及 wordBooks / vocabularyWords / learningProgress / reviewLogs 四数组；每实体输出 UUID id，wordBookID / wordID 输出关系 UUID，不序列化 SwiftData 对象地址。
 
 JSONEncoder `.prettyPrinted` + `.sortedKeys`、date `.iso8601`；UUID 使用 Codable 字符串（未来 adapter canonicalize）。State、rating、errorTypes Codable raw 字符串；tags 数组；questionDirection raw optional string。V3 词源 term/code optional，DTO 两个 bool 也 optional 以兼容旧文件，restore 的 nil flags → false。其他 optional 包括 lastReviewedAt、typedAnswer、expectedAnswer 和 relation ID。
 
@@ -259,7 +259,7 @@ Restore/merge 根据模式使用时间较新内容、skip duplicates 或 overwri
 
 ## Windows database lifecycle and migration
 
-使用 `rusqlite 0.40.2` + **bundled**（libsqlite3-sys 0.38.2）；当前稳定版本经 docs.rs 与 Cargo 解析确认。Tauri 2 / Rust 1.99 以本地编译和 Windows MSVC CI 验证兼容性，锁文件固定解析结果。SQLite 编入原生程序，不要求另装 SQLite DLL。
+使用 `rusqlite 0.40.2` + **bundled**（libsqlite3-sys 0.38.2，bundled SQLite 3.53.2）；当前稳定版本经 docs.rs 与 Cargo 解析确认。Tauri 2 / Rust 1.99 以本地编译和 Windows MSVC CI 验证兼容性，锁文件固定解析结果。SQLite 编入原生程序，不要求另装 SQLite DLL。
 
 Tauri `app.path().app_data_dir()` 取得目录，再 mkdir/open `kotoba.sqlite3`。当前 identifier `com.fumi.kotoba.windows`；macOS Tauri 使用自身 OS app-data 目录，与原生 `com.fumi.Kotoba` SwiftData store 分离。Windows 使用 Tauri 的 OS app-data 位置，不从 repository/cwd/exe dir 推导，不 hard-code 用户路径。
 
