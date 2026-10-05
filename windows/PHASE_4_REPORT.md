@@ -7,8 +7,8 @@
 - Branch: `feature/windows-client`.
 - Base HEAD: `3de0bc8c7015bd20dc0644cbf805ed09b50d73bd`.
 - Starting working tree: clean; branch matched the requested branch. Phase 3 foundation was revalidated before implementation: manifest PASS, Python 11/11, Rust 40/40.
-- Implementation commit: pending commit — `Build Windows vocabulary browsing UI`.
-- Final HEAD: pending CI/report finalization; final branch tip will be provided in the final chat. A report cannot embed the hash of the commit containing itself.
+- Implementation commit: `0176e13cb9f5d4a5ea5a95d3997a05f0fb761145` — `Build Windows vocabulary browsing UI`.
+- Final HEAD / validated runtime source: `0176e13cb9f5d4a5ea5a95d3997a05f0fb761145`. The subsequent report-finalization commit changes this document only and is pushed normally with every CI gate. A report cannot embed the hash of the commit containing itself; final branch tip is supplied in the final chat and by `git rev-parse HEAD`.
 - No main merge, PR, tag or GitHub Release.
 
 ## Product UI
@@ -112,9 +112,15 @@ Loading/error/retry races were checked deterministically; no production database
 
 ## Windows CI
 
-- Run ID / URL: pending source push.
-- Result: pending full native workflow.
-- Native Rust tests / Tauri Windows build / artifacts: pending.
+- Source run: **37292089189**, [Kotoba Windows Build](https://github.com/icytail176/Kotoba/actions/runs/37292089189).
+- Commit: `0176e13cb9f5d4a5ea5a95d3997a05f0fb761145`; job **111704614282**, Windows MSVC build.
+- Result: **SUCCESS**, 2026-10-05 09:45:04–09:56:55 UTC (11 min 51 sec).
+- Native environment: Windows Server 2025, windows-2025-vs2026 image; Node 26.10.0, npm 11.21.0, Rust 1.99.0, stable x86_64-pc-windows-msvc.
+- All gates PASS: npm ci; Svelte check 0 errors/0 warnings; frontend 6/6; frontend production build; manifest/drift; Python 11/11; fmt; check; Clippy all targets; Rust **45 passed / 0 failed / 0 ignored**, 16.04 sec; Tauri Windows build; release executable embedded-manifest verification; output verification and artifact upload.
+- Release executable was run from an empty directory and confirmed manifestVersion 1, total 10,609 and all five exact book counts. This probe validates packaging/resources, not interactive Windows UI.
+- EXE: 15,856,640 bytes; MSI: 5,271,552 bytes; NSIS: 3,380,869 bytes. Output hashes were recorded by the unchanged workflow.
+- Actions artifact remains `kotoba-windows-phase1` (existing artifact naming retained), ID **11336728549**, 13,385,272-byte archive. No GitHub Release/tag/signing.
+- Report-finalization push receives the same full workflow; its final run and branch tip are given in the final chat, without embedding this document's own commit hash.
 
 ## macOS Project Isolation
 
@@ -136,4 +142,4 @@ SRS, study/review flow, spelling, statistics, sync, auth, Mac canonical mapping,
 
 ## Phase 4 Result
 
-Local checks and macOS audit PASS. Final result pending full Windows CI.
+**PASS** — local validation, macOS Tauri audit and complete native Windows CI passed. Physical Windows UI runtime remains NOT TESTED.
