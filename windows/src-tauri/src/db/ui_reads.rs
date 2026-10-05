@@ -47,6 +47,7 @@ pub struct WordDetail {
     pub example_chinese: String,
     pub tags: Vec<String>,
     pub loanword: Option<LoanwordSource>,
+    pub learning_status: crate::srs::models::LearningStatusPresentation,
 }
 const JOIN: &str = "FROM vocabulary_words w JOIN word_books b ON b.id=w.word_book_id";
 const BUILTIN: &str =
@@ -180,7 +181,7 @@ impl Database {
         })
     }
     pub fn word_detail(&self, id: Id) -> Result<Option<WordDetail>> {
-        let sql=format!("SELECT {COLUMNS},w.part_of_speech,w.example_japanese,w.example_chinese,w.tags,w.loanword_source_term,w.loanword_source_language_code,w.loanword_is_wasei,w.loanword_is_partial {JOIN} WHERE {BUILTIN} AND w.id=?1");
+        let sql=format!("SELECT {COLUMNS},w.part_of_speech,w.example_japanese,w.example_chinese,w.tags,w.loanword_source_term,w.loanword_source_language_code,w.loanword_is_wasei,w.loanword_is_partial,p.state {JOIN} LEFT JOIN learning_progress p ON p.word_id=w.id WHERE {BUILTIN} AND w.id=?1");
         let detail = self
             .connection
             .query_row(&sql, [id], |row| {
@@ -204,6 +205,9 @@ impl Database {
                         })
                         .collect(),
                     loanword: loanword(row.get(11)?, row.get(12)?, row.get(13)?, row.get(14)?),
+                    learning_status: crate::srs::models::LearningStatusPresentation::from_state(
+                        row.get(15)?,
+                    ),
                 })
             })
             .optional()?;

@@ -3,6 +3,7 @@ mod migrations;
 pub mod models;
 mod reads;
 mod repository;
+pub(crate) mod srs_repository;
 mod ui_reads;
 pub use ui_reads::{PagedWords, WordBookSummary, WordDetail};
 #[cfg(test)]

@@ -33,3 +33,10 @@ test("detail open switches safely, close invalidates pending result, missing is 
  const closed=deferred();const last=resource.run(()=>closed.promise);resource.dispose();closed.resolve("closed");await last;assert.equal(state.data,null);await resource.run(async()=>null);assert.equal(state.status,"ready");assert.equal(state.data,null);
 });
 test("page range handles empty and final page",()=>{assert.equal(rangeLabel(page(0,0)),"0 / 0");assert.equal(rangeLabel({...page(800,802),items:[{},{}]}),"801–802 / 802");});
+
+import {learningStatusLabel} from "../src/lib/vocabulary/presentation.ts";
+test("read-only learning status labels use the presentation DTO",()=>{
+ assert.equal(learningStatusLabel("unlearned"),"未学习");
+ assert.equal(learningStatusLabel("reviewing"),"复习中");
+ assert.equal(learningStatusLabel("mastered"),"已熟练");
+});

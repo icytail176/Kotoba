@@ -1,6 +1,6 @@
 # Kotoba Windows Client
 
-Status: Phase 4 — product UI foundation and read-only vocabulary browsing.
+Status: Phase 5 — SRS scheduler, atomic review persistence and automatic mastery; product UI remains read-only vocabulary browsing.
 
 Technology: Tauri 2, Svelte 5, TypeScript and Rust. SvelteKit uses the static adapter and Vite. No new dependencies are introduced for Phase 4.
 
@@ -49,4 +49,6 @@ SQLite Schema 2 is initialized through Rust in the Tauri OS app-data directory a
 
 Canonical identity is **READY** and Windows mapping is **IMPLEMENTED**; Mac mapping is **NOT IMPLEMENTED**. See [shared identity rules](../shared/vocabulary/README.md), [the data contract](docs/CROSS_PLATFORM_DATA_CONTRACT.md), [Phase 3 report](PHASE_3_REPORT.md) and [Phase 4 report](PHASE_4_REPORT.md).
 
-Phase 4 does not implement study, SRS, spelling, statistics, sync, auth, CSV import or vocabulary/user-state mutations. Pitch and romaji presentation parity are pending. Existing macOS source, tests, project files and resources are unchanged.
+Phase 5 adds pure Rust scheduling with explicit clock/calendar context, formal review transactions, manual/automatic mastery, bounded history and eligible/due reads. The transaction service requires an expected-progress snapshot to detect stale duplicate callbacks and returns only after commit succeeds. No rating mutation IPC or product scoring buttons are exposed yet. Details add only actual read-only learning-status presentation. See [SRS parity specification](docs/SRS_PARITY_SPEC.md) and [Phase 5 report](PHASE_5_REPORT.md).
+
+Phase 5 does not implement StudySession, reinforcement, spelling, statistics, sync, auth, CSV import or vocabulary-edit/reset UI. The future session must supply the user's complete native timezone rules to the explicit calendar context. Pitch and romaji presentation parity are pending. Existing macOS source, tests, project files and resources are unchanged.

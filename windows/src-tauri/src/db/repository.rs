@@ -56,7 +56,7 @@ pub(super) fn read_vocabulary_words(row: &Row<'_>) -> rusqlite::Result<Vocabular
     })
 }
 
-fn read_learning_progress(row: &Row<'_>) -> rusqlite::Result<LearningProgress> {
+pub(super) fn read_learning_progress(row: &Row<'_>) -> rusqlite::Result<LearningProgress> {
     Ok(LearningProgress {
         id: row.get(0)?,
         word_id: row.get(1)?,
@@ -71,7 +71,7 @@ fn read_learning_progress(row: &Row<'_>) -> rusqlite::Result<LearningProgress> {
     })
 }
 
-fn read_review_logs(row: &Row<'_>) -> rusqlite::Result<ReviewLog> {
+pub(super) fn read_review_logs(row: &Row<'_>) -> rusqlite::Result<ReviewLog> {
     Ok(ReviewLog {
         id: row.get(0)?,
         word_id: row.get(1)?,

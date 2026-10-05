@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { VocabularyWordDetail } from "$lib/types/vocabulary";
   import type { ReadState } from "./state";
+  import { learningStatusLabel } from "./presentation";
   import ReadStatus from "$lib/components/ReadStatus.svelte";
   let { state, close, retry }: { state: ReadState<VocabularyWordDetail | null>; close: () => void; retry: () => void } = $props();
 </script>
@@ -9,7 +10,7 @@
   <ReadStatus status={state.status} errorMessage="无法加载单词详情，请重试。" retry={retry} />
   {#if state.status === "ready"}
     {#if state.data}{@const word = state.data}<div class="detail-content">
-      <span class="badge">{word.bookName}</span><h3 lang="ja">{word.expression || "—"}</h3>{#if word.reading}<p class="reading" lang="ja">{word.reading}</p>{/if}
+      <span class="badge">{word.bookName}</span><p class="muted">学习状态：{learningStatusLabel(word.learningStatus)}</p><h3 lang="ja">{word.expression || "—"}</h3>{#if word.reading}<p class="reading" lang="ja">{word.reading}</p>{/if}
       <section class="block"><h4>中文释义</h4><p>{word.meaningChinese || "暂无释义"}</p>{#if word.partOfSpeech}<span class="part">{word.partOfSpeech}</span>{/if}</section>
       {#if word.exampleJapanese || word.exampleChinese}<section class="block"><h4>例句</h4>{#if word.exampleJapanese}<p lang="ja">{word.exampleJapanese}</p>{/if}{#if word.exampleChinese}<p class="muted translation">{word.exampleChinese}</p>{/if}</section>{/if}
       {#if word.loanword}<section class="block"><h4>{word.loanword.isPartial ? "部分词源" : "外来语词源"}</h4><p>{word.loanword.sourceTerm}{#if word.loanword.isWasei}（{word.loanword.languageName && word.loanword.languageName !== "英语" ? `和制${word.loanword.languageName}` : "和制英语"}）{:else if word.loanword.languageName}（{word.loanword.languageName}）{/if}</p></section>{/if}

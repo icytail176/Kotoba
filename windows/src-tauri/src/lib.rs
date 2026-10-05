@@ -1,4 +1,5 @@
 pub mod db;
+pub mod srs;
 pub mod vocabulary;
 
 use std::sync::Mutex;
@@ -16,7 +17,7 @@ fn app_info() -> AppInfo {
     AppInfo {
         name: "Kotoba",
         platform: std::env::consts::OS,
-        phase: 4,
+        phase: 5,
     }
 }
 
