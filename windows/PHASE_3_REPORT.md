@@ -7,7 +7,7 @@
 - Branch: `feature/windows-client`
 - Base HEAD: `ab7cb58a0fa819d08eef9b97ee6dda30d8324d3a` (Phase 2 final documentation; full Windows CI passed).
 - Starting working tree: clean; no user changes overwritten.
-- Implementation commit: pending — `Add canonical vocabulary manifest and Windows seed`.
+- Implementation commit: `4efdd5c153db2129221de81290e1c67fe44fa5c9` — `Add canonical vocabulary manifest and Windows seed`.
 - Final HEAD: implementation SHA will be recorded after commit; any report-finalization commit is documentation-only, pushed normally with full CI. A document cannot contain the hash of the commit containing itself; final branch tip is given in the final chat and by `git rev-parse HEAD`.
 - No main merge, PR, tag or Release.
 
@@ -47,7 +47,7 @@ The manifest provides shared identity; current Mac random VocabularyWord.id rema
 | N2 | 3,206 |
 | N1 | 4,029 |
 
-Fields follow the actual read-only Mac seed pipeline: expression, reading, meaningChinese, partOfSpeech, exampleJapanese, exampleChinese, jlptLevel, ordered tags, nullable loanword source term/language and wasei/partial flags; book binding, canonical key/UUID and immutable initial provenance anchor. Book names/descriptions come from actual seed definitions. Metadata contains relative paths/hashes, counts, namespace, createdAt and independent versions; no user-machine absolute path.
+Fields follow the actual read-only Mac seed pipeline: expression, reading, meaningChinese, partOfSpeech, exampleJapanese, exampleChinese, jlptLevel, ordered tags, nullable loanword source term/language and wasei/partial flags; book binding, canonical key/UUID and immutable initial provenance anchor. Book names/descriptions come from actual seed definitions. Metadata contains relative paths/LF-normalized source hashes, counts, namespace, createdAt and independent versions; no user-machine absolute path.
 
 All **836** current loanword sidecar rows match exactly one entry. Languages: eng 780, fre 22, ger 11, dut 9, por 6, ita 4, chi 2, lat 1, rus 1. The 2 Chinese-origin records are retained despite Mac presentation hiding them. This uses current seedVersion 8 data, not the old 46-row sample.
 
@@ -106,7 +106,7 @@ Diagnostic UI displays Kotoba / Windows client prototype / Phase 3, Schema 2, ma
 
 ## Tests
 
-Local Rust tests: **40 passed, 0 failed, 0 ignored** (21 existing Phase 2 + 19 new Phase 3). Binary/doc targets have zero tests. Python tooling tests: **9 passed, 0 failed**.
+Local Rust tests: **40 passed, 0 failed, 0 ignored** (21 existing Phase 2 + 19 new Phase 3). Binary/doc targets have zero tests. Python tooling tests: **11 passed, 0 failed**.
 
 New Rust coverage:
 
@@ -123,7 +123,7 @@ Hardcoded vectors include:
 | jlpt:n4:000001 | 465a5b4d-1a74-5b0a-b924-80a5cd2a193e |
 | jlpt:n1:004029 | 74ee073b-38f3-5c4b-ba21-1279f7a659a2 |
 
-RFC DNS UUID v5 vector is also checked. Python tests cover pristine bootstrap replay/refusal, real coverage, reorder, changed metadata, lexical rename/growth added/removed, invalid schema/identity and ledger anchors.
+RFC DNS UUID v5 vector is also checked. Python tests cover pristine bootstrap replay/refusal, real coverage, reorder, changed metadata, lexical rename/growth added/removed, invalid schema/identity ledger anchors, Windows CRLF checkout stability and real pipeline drift rejection.
 
 ## macOS Validation
 
@@ -137,7 +137,7 @@ RFC DNS UUID v5 vector is also checked. Python tests cover pristine bootstrap re
 
 ## Windows CI
 
-Pending implementation push. All existing npm ci/check/build, Rust fmt/check/clippy/test and Tauri Windows build gates remain enabled. Added manifest validation/tool tests and actual release EXE embedded-resource probe from empty temp cwd. Native test uses tempfile SQLite, real migration 2, exact full import, close/reopen and second-import identity preservation. No continue-on-error or skip.
+Implementation pushed. First run 37255897071 failed at pipeline hash validation because Windows Git checked text out as CRLF; no lexical/identity drift. The smallest repair normalizes only CRLF → LF before hashing, adds CRLF/real-change regression tests and leaves all manifest identities/counts unchanged. Replacement native run pending. All existing npm ci/check/build, Rust fmt/check/clippy/test and Tauri Windows build gates remain enabled. Added manifest validation/tool tests and actual release EXE embedded-resource probe from empty temp cwd. Native test uses tempfile SQLite, real migration 2, exact full import, close/reopen and second-import identity preservation. No continue-on-error or skip.
 
 ## macOS Project Isolation
 

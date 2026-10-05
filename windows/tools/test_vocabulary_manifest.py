@@ -44,6 +44,17 @@ class ManifestToolsTests(unittest.TestCase):
     def test_upstream_reorder_does_not_change_identity_or_drift(self):
         path,rows=self.csv_rows();rows.reverse();self.write_csv(path,rows)
         validated=self.validate();self.assertEqual(validated['entries'][0]['canonicalId'],self.manifest['entries'][0]['canonicalId'])
+    def test_crlf_checkout_keeps_source_hashes_and_identity_stable(self):
+        for relative in self.manifest['generatedFrom']['sourceSha256']:
+            path=self.repo/relative
+            path.write_bytes(path.read_bytes().replace(b'\r\n',b'\n').replace(b'\n',b'\r\n'))
+        self.assertEqual(self.validate(),self.manifest)
+        _,hashes=tool.sources(self.repo)
+        self.assertEqual(hashes,self.manifest['generatedFrom']['sourceSha256'])
+    def test_real_pipeline_change_still_fails_after_line_ending_normalization(self):
+        path=self.repo/tool.PIPELINES[0]
+        path.write_bytes(path.read_bytes().replace(b'\r\n',b'\n').replace(b'\n',b'\r\n')+b'// changed pipeline\r\n')
+        with self.assertRaisesRegex(ValueError,'PIPELINE DRIFT'):self.validate()
     def test_metadata_drift_is_reported_as_changed(self):
         path,rows=self.csv_rows();rows[0]['meaningChinese']+=' changed';self.write_csv(path,rows)
         with self.assertRaisesRegex(ValueError,'SOURCE DRIFT.*changed'):self.validate()

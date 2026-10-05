@@ -55,7 +55,7 @@ Read-only source CSVs: `Kotoba/Resources/eggrolls_kotoba_N*_strict.csv`. Fields:
 
 Pitch accent is authoritative raw `音调:` tags (10,398 entries); `PitchAccentPresentation` derives display alternatives/components at runtime. The manifest retains tags without reinterpretation. Romaji is derived at runtime by `JapaneseRomajiFormatter` and is not persisted in VocabularyWord; no romaji field is added. Windows romaji/pitch display parity can be implemented later against these sources.
 
-`generatedFrom` records relative source paths/SHA-256 snapshot hashes and sourceMacSeedVersion 8. This seed version is provenance; shared manifestVersion 1 and Windows physical schema 2 are independent versions.
+`generatedFrom` records relative source paths/SHA-256 snapshot hashes over canonical LF text (Windows CRLF checkout does not change provenance) and sourceMacSeedVersion 8. This seed version is provenance; shared manifestVersion 1 and Windows physical schema 2 are independent versions.
 
 ## Duplicate audit (preserved, never merged)
 

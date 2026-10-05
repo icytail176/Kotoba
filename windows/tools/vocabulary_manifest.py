@@ -95,7 +95,9 @@ def sources(repo, allow_count_change=False):
     unmatched = sorted(set(etymologies)-matched)
     if unmatched:
         raise ValueError(f'unmatched sidecar rows require review: {unmatched}')
-    return entries, {f: digest((repo/f).read_bytes()) for f in files + PIPELINES}
+    # Git on Windows may check text out as CRLF. Hash canonical LF text so
+    # checkout presentation cannot masquerade as a pipeline semantic change.
+    return entries, {f: digest((repo/f).read_bytes().replace(b'\r\n', b'\n')) for f in files + PIPELINES}
 
 def duplicate_audit(entries):
     result = {}
