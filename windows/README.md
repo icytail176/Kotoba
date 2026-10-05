@@ -1,51 +1,52 @@
 # Kotoba Windows Client
 
-Status: Data foundation prototype (Phase 3).
+Status: Phase 4 — product UI foundation and read-only vocabulary browsing.
 
-Technology: Tauri 2, Svelte, TypeScript, Rust. The official Svelte template uses SvelteKit with a static adapter and Vite.
+Technology: Tauri 2, Svelte 5, TypeScript and Rust. SvelteKit uses the static adapter and Vite. No new dependencies are introduced for Phase 4.
+
+## Product UI
+
+The Simplified Chinese sidebar contains 今日学习、单词管理、词书、学习统计、五十音图、设置. Word management, wordbooks and word details are implemented; the other pages explicitly explain that their functionality comes in a later phase.
+
+Browse all 10,609 built-in words or one of five JLPT books, 50 words per page. Search expression, reading or Chinese meaning through SQLite, with a 250 ms debounce and stale-response protection. Clearing search returns to initial browsing. Details show existing lexical content and optional examples, tags and permitted loanword sources. Chinese-origin source metadata remains stored but hidden in the UI, matching the current Mac presentation policy.
+
+The native window starts at 1100 × 760, with a 720 × 560 minimum. Wide windows display list and detail together; narrow windows replace the list with detail. CSS semantic tokens follow the system light/dark preference, and system fonts provide Japanese fallback. Buttons support keyboard focus, Enter activation and Escape detail/back navigation.
 
 ## Development on macOS
 
-Prerequisites: Node.js/npm, Rust/Cargo, and Xcode command line tools.
+Prerequisites: Node.js/npm, Rust/Cargo and Xcode command line tools. Node 26 is used by CI and the dependency-free frontend state tests.
 
 ```sh
 cd windows
-npm install
+npm ci
 npm run tauri dev
 ```
 
-The placeholder displays Japanese text and calls the side-effect-free Rust `app_info` command once when mounted. `IPC connected` and the returned platform confirm the IPC path.
-
-Running `tauri dev` on macOS verifies the shared Tauri application stack,
-but does not constitute Windows platform validation.
-
-Windows CI validates frontend checks, Rust checks/tests, and native MSI/NSIS/EXE builds. See the phase reports for specific run evidence.
+Running `tauri dev` on macOS verifies the shared application stack and macOS WebView layout. Physical Windows UI runtime remains **NOT TESTED**. Windows CI validates native Rust tests and EXE/MSI/NSIS builds; signing is not configured.
 
 ## Validation
 
 ```sh
-npm run check
+npm run check -- --fail-on-warnings
+npm run test:ui
 npm run build
+python3 tools/vocabulary_manifest.py validate
+python3 -m unittest discover -s tools -p 'test_*.py'
 cd src-tauri
 cargo fmt --check
-cargo check
-cargo clippy -- -D warnings
+cargo check --locked
+cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-Commit `package-lock.json` and `src-tauri/Cargo.lock` for reproducible dependency resolution. Generated output and local dependencies are ignored.
+Lockfiles retain reproducible dependency resolution. Generated output and local dependencies are ignored. Frontend state tests use Node's built-in test runner and TypeScript stripping, without an added test framework.
 
-SQLite Schema 2 is initialized through Rust in Tauri's OS app-data directory as `kotoba.sqlite3`, using bundled SQLite. The placeholder calls typed `database_info` and displays `Database connected` / `Schema 2`; it cannot execute arbitrary SQL. Tests use only in-memory or temporary file databases.
+## Data and services
 
-Five canonical built-in books and 10,609 words are imported by Rust from a compile-time embedded shared manifest. Local UUIDs remain separate from canonical UUID v5 identities. Startup import is transactional and idempotent; user favorites, archive state, progress and logs are preserved. The diagnostic page shows counts and literal substring search (bounded results). No SRS or sync is implemented.
+SQLite Schema 2 is initialized through Rust in the Tauri OS app-data directory as `kotoba.sqlite3`. The canonical manifest is embedded at compile time; transactional, idempotent import preserves user state. Schema, seed version, canonical identities and shared resources are unchanged by Phase 4.
 
-Canonical identity is **READY** and Windows mapping is implemented; Mac canonical mapping is **NOT IMPLEMENTED**. See [shared identity rules](../shared/vocabulary/README.md), [the data contract](docs/CROSS_PLATFORM_DATA_CONTRACT.md), and [Phase 3 report](PHASE_3_REPORT.md).
+`src/lib/services/vocabulary.ts` centralizes typed IPC. Product-facing `browse_books`, `browse_words`, `browse_search` and `word_detail` use dedicated camelCase DTOs. IDs remain internal references for reads and are not displayed. Bounded list/search queries join book labels directly, with one count and one page query. Missing detail returns `null`; transient errors show safe Chinese messages and retry. Internal `database_info` diagnostics remain available but are absent from the product UI. Phase 3 database read methods and their contracts/tests remain intact.
 
-```sh
-python3 tools/vocabulary_manifest.py validate
-python3 -m unittest discover -s tools -p 'test_*.py'
-```
+Canonical identity is **READY** and Windows mapping is **IMPLEMENTED**; Mac mapping is **NOT IMPLEMENTED**. See [shared identity rules](../shared/vocabulary/README.md), [the data contract](docs/CROSS_PLATFORM_DATA_CONTRACT.md), [Phase 3 report](PHASE_3_REPORT.md) and [Phase 4 report](PHASE_4_REPORT.md).
 
-The historical Schema 1 definition is unchanged; migration 2 adds canonical fields and independent content metadata. CI validates manifest/source drift, immutable ledger reservations, tests and the actual release executable's embedded resource from an empty directory.
-
-Client code remains under `windows/`, shared vocabulary under `shared/vocabulary/`, and validation is added to Windows CI. Existing macOS source/resources/scripts are unchanged.
+Phase 4 does not implement study, SRS, spelling, statistics, sync, auth, CSV import or vocabulary/user-state mutations. Pitch and romaji presentation parity are pending. Existing macOS source, tests, project files and resources are unchanged.

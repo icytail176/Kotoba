@@ -16,7 +16,7 @@ fn app_info() -> AppInfo {
     AppInfo {
         name: "Kotoba",
         platform: std::env::consts::OS,
-        phase: 3,
+        phase: 4,
     }
 }
 
@@ -30,65 +30,57 @@ fn database_info(
     database.info().map_err(|error| error.to_string())
 }
 
+// Product reads use dedicated DTOs; legacy database diagnostics remain separate.
 #[tauri::command]
-fn list_builtin_word_books(
+fn browse_books(
     database: tauri::State<'_, Mutex<db::Database>>,
-) -> Result<Vec<db::BookSummary>, String> {
+) -> Result<Vec<db::WordBookSummary>, String> {
     database
         .lock()
-        .map_err(|_| "Database service lock failed".to_string())?
-        .list_builtin_word_books()
+        .map_err(|_| "Read service unavailable".to_string())?
+        .browse_books()
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
-fn get_word_book_summary(
-    id: String,
-    database: tauri::State<'_, Mutex<db::Database>>,
-) -> Result<Option<db::BookSummary>, String> {
-    let id = db::models::Id::parse(&id).map_err(|e| e.to_string())?;
-    database
-        .lock()
-        .map_err(|_| "Database service lock failed".to_string())?
-        .get_word_book_summary(id)
-        .map_err(|e| e.to_string())
-}
-#[tauri::command]
-fn list_words(
-    book_id: String,
+fn browse_words(
+    book_id: Option<String>,
     limit: u32,
     offset: u32,
     database: tauri::State<'_, Mutex<db::Database>>,
-) -> Result<db::WordPage, String> {
-    let id = db::models::Id::parse(&book_id).map_err(|e| e.to_string())?;
+) -> Result<db::PagedWords, String> {
+    let book = book_id
+        .map(|id| db::models::Id::parse(&id))
+        .transpose()
+        .map_err(|e| e.to_string())?;
     database
         .lock()
-        .map_err(|_| "Database service lock failed".to_string())?
-        .list_words(id, limit, offset)
+        .map_err(|_| "Read service unavailable".to_string())?
+        .browse_words(book, limit, offset)
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
-fn get_word(
-    id: String,
-    database: tauri::State<'_, Mutex<db::Database>>,
-) -> Result<Option<db::models::VocabularyWord>, String> {
-    let id = db::models::Id::parse(&id).map_err(|e| e.to_string())?;
-    database
-        .lock()
-        .map_err(|_| "Database service lock failed".to_string())?
-        .fetch_word(id)
-        .map_err(|e| e.to_string())
-}
-#[tauri::command]
-fn search_words(
+fn browse_search(
     query: String,
     limit: u32,
     offset: u32,
     database: tauri::State<'_, Mutex<db::Database>>,
-) -> Result<db::WordPage, String> {
+) -> Result<db::PagedWords, String> {
     database
         .lock()
-        .map_err(|_| "Database service lock failed".to_string())?
-        .search_words(&query, limit, offset)
+        .map_err(|_| "Read service unavailable".to_string())?
+        .browse_search(&query, limit, offset)
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn word_detail(
+    id: String,
+    database: tauri::State<'_, Mutex<db::Database>>,
+) -> Result<Option<db::WordDetail>, String> {
+    let id = db::models::Id::parse(&id).map_err(|e| e.to_string())?;
+    database
+        .lock()
+        .map_err(|_| "Read service unavailable".to_string())?
+        .word_detail(id)
         .map_err(|e| e.to_string())
 }
 
@@ -112,11 +104,10 @@ pub fn run() -> tauri::Result<()> {
         .invoke_handler(tauri::generate_handler![
             app_info,
             database_info,
-            list_builtin_word_books,
-            get_word_book_summary,
-            list_words,
-            get_word,
-            search_words
+            browse_books,
+            browse_words,
+            browse_search,
+            word_detail
         ])
         .run(tauri::generate_context!())
 }

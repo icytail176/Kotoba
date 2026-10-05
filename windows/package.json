@@ -1,7 +1,7 @@
 {
   "name": "kotoba-windows",
   "version": "0.1.0",
-  "description": "Kotoba Windows client \u2014 Phase 0 foundation",
+  "description": "Kotoba Windows vocabulary client",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -10,7 +10,8 @@
     "prepare": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:ui": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2"

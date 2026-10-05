@@ -13,11 +13,11 @@
     "windows": [
       {
         "title": "Kotoba",
-        "width": 800,
-        "height": 600,
+        "width": 1100,
+        "height": 760,
         "resizable": true,
-        "minWidth": 320,
-        "minHeight": 360
+        "minWidth": 720,
+        "minHeight": 560
       }
     ],
     "security": {

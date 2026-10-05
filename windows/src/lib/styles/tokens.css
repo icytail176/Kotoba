@@ -1,0 +1,33 @@
+/* Colors live here; components consume semantic tokens. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, "Segoe UI", "Yu Gothic UI", Meiryo, "PingFang SC", sans-serif;
+  font-size: 14px; line-height: 1.5;
+  --background: #f4f6f5; --surface: #ffffff; --surface-secondary: #edf2ef;
+  --text-primary: #202c27; --text-secondary: #57675e; --border: #d7e0db;
+  --accent: #176b51; --danger: #a1323b; --focus: #247c61;
+  --sidebar-width: 204px; --content-spacing: 28px; --radius: 12px;
+  color: var(--text-primary); background: var(--background);
+}
+@media (prefers-color-scheme: dark) { :root {
+  --background: #171d1a; --surface: #202923; --surface-secondary: #29362e;
+  --text-primary: #edf3ef; --text-secondary: #b2c3b8; --border: #3c4b42;
+  --accent: #91d7b6; --danger: #ffa6ad; --focus: #91d7b6;
+} }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+button, input { font: inherit; }
+button { cursor: pointer; color: inherit; }
+button:disabled { cursor: default; opacity: .45; }
+button, input { border: 1px solid var(--border); background: var(--surface); border-radius: 7px; }
+button { padding: 8px 12px; }
+button:hover:not(:disabled) { background: var(--surface-secondary); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+input { color: var(--text-primary); padding: 10px 12px; min-width: 0; }
+input::placeholder { color: var(--text-secondary); }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 26px; font-weight: 650; letter-spacing: -.5px; }
+h2 { font-size: 19px; font-weight: 650; }
+.muted { color: var(--text-secondary); }
+[lang="ja"] { font-family: system-ui, "Yu Gothic UI", Meiryo, sans-serif; }
+@media (max-width: 800px) { :root { --sidebar-width: 160px; --content-spacing: 16px; } h1 { font-size: 23px; } }

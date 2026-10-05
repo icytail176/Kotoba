@@ -3,6 +3,10 @@ mod migrations;
 pub mod models;
 mod reads;
 mod repository;
+mod ui_reads;
+pub use ui_reads::{PagedWords, WordBookSummary, WordDetail};
+#[cfg(test)]
+mod ui_reads_tests;
 pub use builtin::ImportResult;
 pub use reads::{BookSummary, WordPage};
 
