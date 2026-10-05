@@ -1,6 +1,10 @@
+mod builtin;
 mod migrations;
 pub mod models;
+mod reads;
 mod repository;
+pub use builtin::ImportResult;
+pub use reads::{BookSummary, WordPage};
 
 use rusqlite::Connection;
 use std::{error::Error, fmt, path::Path, time::Duration};
@@ -14,6 +18,7 @@ pub enum DatabaseError {
     Json(serde_json::Error),
     UnsupportedSchema(i64),
     InvalidData(&'static str),
+    Manifest(String),
     Migration {
         version: u32,
         source: rusqlite::Error,
@@ -28,6 +33,7 @@ impl fmt::Display for DatabaseError {
             Self::UnsupportedSchema(v) => {
                 write!(f, "Unsupported database schema {v}; database was not reset")
             }
+            Self::Manifest(message) => write!(f, "Invalid canonical manifest: {message}"),
             Self::InvalidData(message) => write!(f, "Invalid database data: {message}"),
             Self::Migration { version, source } => {
                 write!(f, "Migration to schema {version} failed: {source}")
@@ -76,10 +82,11 @@ pub struct DatabaseInfo {
     /// Display-safe relative description, never a user-specific absolute path.
     pub location: &'static str,
     pub table_counts: TableCounts,
+    pub manifest_version: Option<u32>,
 }
 
 pub struct Database {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 impl Database {
     /// Production caller resolves this directory with Tauri's app_data_dir().
@@ -106,6 +113,7 @@ impl Database {
                 .connection
                 .pragma_query_value(None, "user_version", |row| row.get(0))?,
             location: "app-data/kotoba.sqlite3",
+            manifest_version: self.manifest_version()?,
             table_counts: TableCounts {
                 word_books: self.connection.query_row(
                     "SELECT count(*) FROM word_books",
@@ -134,3 +142,6 @@ impl Database {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod builtin_tests;

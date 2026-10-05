@@ -1,17 +1,21 @@
 use super::{DatabaseError, Result};
 use rusqlite::{Connection, TransactionBehavior};
 
-const MIGRATIONS: &[(u32, &str)] = &[(1, include_str!("schema_1.sql"))];
+pub(super) const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("schema_1.sql")),
+    (2, include_str!("schema_2.sql")),
+];
 
 pub(super) fn apply(connection: &mut Connection) -> Result<()> {
     apply_plan(connection, MIGRATIONS)?;
     // Validate the current shape as well as the version marker; never recreate a
     // malformed existing database. Future migrations extend this validation.
     for statement in [
-        "SELECT id,name,book_description,created_at,updated_at,is_built_in FROM word_books LIMIT 0",
-        "SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id FROM vocabulary_words LIMIT 0",
+        "SELECT id,name,book_description,created_at,updated_at,is_built_in,canonical_id,canonical_key FROM word_books LIMIT 0",
+        "SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id,canonical_id,canonical_key FROM vocabulary_words LIMIT 0",
         "SELECT id,word_id,state,due_at,interval_days,review_count,lapse_count,last_reviewed_at,created_at,updated_at FROM learning_progress LIMIT 0",
         "SELECT id,word_id,reviewed_at,rating,previous_state,next_state,previous_interval_days,next_interval_days,scheduled_due_at,error_types,typed_answer,expected_answer,question_direction_raw_value,reading_wrong_count,spelling_wrong_count,repeated_wrong_count FROM review_logs LIMIT 0",
+        "SELECT manifest_version,format_version,namespace_uuid,manifest_fingerprint,identity_fingerprint FROM built_in_content LIMIT 0",
     ] { connection.prepare(statement)?; }
     Ok(())
 }

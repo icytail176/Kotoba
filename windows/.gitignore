@@ -16,3 +16,6 @@ vite.config.ts.timestamp-*
 .vscode/
 *.swp
 *.swo
+
+__pycache__/
+*.pyc

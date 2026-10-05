@@ -1,10 +1,10 @@
 use super::{migrations, models::*, Database, DatabaseError};
 use rusqlite::{params, Connection};
 type TestResult<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
-fn id(n: u128) -> TestResult<Id> {
+pub(super) fn id(n: u128) -> TestResult<Id> {
     Ok(Id::parse(&uuid::Uuid::from_u128(n).to_string())?)
 }
-fn book() -> TestResult<WordBook> {
+pub(super) fn book() -> TestResult<WordBook> {
     Ok(WordBook {
         id: id(1)?,
         name: "Test".into(),
@@ -12,9 +12,11 @@ fn book() -> TestResult<WordBook> {
         created_at: Timestamp(0),
         updated_at: Timestamp(123),
         is_built_in: false,
+        canonical_id: None,
+        canonical_key: None,
     })
 }
-fn word(n: u128) -> TestResult<VocabularyWord> {
+pub(super) fn word(n: u128) -> TestResult<VocabularyWord> {
     Ok(VocabularyWord {
         id: id(n)?,
         japanese: "ことば".into(),
@@ -34,9 +36,11 @@ fn word(n: u128) -> TestResult<VocabularyWord> {
         loanword_is_wasei: true,
         loanword_is_partial: false,
         word_book_id: Some(id(1)?),
+        canonical_id: None,
+        canonical_key: None,
     })
 }
-fn progress(n: u128, word_id: Id) -> TestResult<LearningProgress> {
+pub(super) fn progress(n: u128, word_id: Id) -> TestResult<LearningProgress> {
     Ok(LearningProgress {
         id: id(n)?,
         word_id,
@@ -50,7 +54,7 @@ fn progress(n: u128, word_id: Id) -> TestResult<LearningProgress> {
         updated_at: Timestamp(321),
     })
 }
-fn log(n: u128, word_id: Id, date: i64) -> TestResult<ReviewLog> {
+pub(super) fn log(n: u128, word_id: Id, date: i64) -> TestResult<ReviewLog> {
     Ok(ReviewLog {
         id: id(n)?,
         word_id,
@@ -78,10 +82,26 @@ fn fixture() -> TestResult<Database> {
 }
 #[test]
 fn new_database_schema_one_and_empty() -> TestResult {
-    let db = Database::in_memory()?;
-    assert_eq!(db.info()?.schema_version, 1);
-    assert_eq!(db.info()?.table_counts.vocabulary_words, 0);
-    assert!(db.list_books()?.is_empty());
+    let mut connection = Connection::open_in_memory()?;
+    migrations::apply_plan(&mut connection, &migrations::MIGRATIONS[..1])?;
+    let db = Database { connection };
+    assert_eq!(
+        db.connection
+            .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))?,
+        1
+    );
+    assert_eq!(
+        db.connection
+            .query_row("SELECT count(*) FROM vocabulary_words", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    assert_eq!(
+        db.connection
+            .query_row("SELECT count(*) FROM word_books", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
     Ok(())
 }
 #[test]
@@ -101,7 +121,7 @@ fn file_backed_migration_crud_reopen_is_idempotent() -> TestResult {
     }
     {
         let db = Database::open(&path)?;
-        assert_eq!(db.info()?.schema_version, 1);
+        assert_eq!(db.info()?.schema_version, 2);
         assert_eq!(db.fetch_book(b.id)?, Some(b));
         assert_eq!(db.fetch_word(w.id)?, Some(w.clone()));
         assert_eq!(db.fetch_progress(w.id)?, Some(p));
@@ -364,9 +384,13 @@ fn negative_counters_rejected() -> TestResult {
 fn migration_failure_rolls_back_and_preserves_file() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("test.sqlite3");
-    let db = Database::open(&path)?;
-    db.upsert_book(&book()?)?;
-    drop(db);
+    let mut legacy = Connection::open(&path)?;
+    migrations::apply_plan(&mut legacy, &migrations::MIGRATIONS[..1])?;
+    legacy.execute(
+        "INSERT INTO word_books VALUES (?1,'Test','Temporary',0,123,0)",
+        [id(1)?],
+    )?;
+    drop(legacy);
     let mut connection = Connection::open(&path)?;
     let plan=[(1,""),(2,"CREATE TABLE migration_probe(value TEXT); INSERT INTO migration_probe VALUES ('keep'); INVALID SQL;")];
     assert!(matches!(
@@ -396,11 +420,11 @@ fn future_schema_rejected_without_reset() -> TestResult {
     let path = directory.path().join("future.sqlite3");
     let db = Database::open(&path)?;
     db.upsert_book(&book()?)?;
-    db.connection.pragma_update(None, "user_version", 2)?;
+    db.connection.pragma_update(None, "user_version", 3)?;
     drop(db);
     assert!(matches!(
         Database::open(&path),
-        Err(DatabaseError::UnsupportedSchema(2))
+        Err(DatabaseError::UnsupportedSchema(3))
     ));
     let c = Connection::open(&path)?;
     assert_eq!(
@@ -410,7 +434,7 @@ fn future_schema_rejected_without_reset() -> TestResult {
     );
     assert_eq!(
         c.pragma_query_value(None, "user_version", |r| r.get::<_, i32>(0))?,
-        2
+        3
     );
     Ok(())
 }
@@ -444,7 +468,14 @@ fn initial_migration_failure_preserves_unmanaged_data() -> TestResult {
 }
 #[test]
 fn future_migration_one_to_two_preserves_data() -> TestResult {
-    let mut db = fixture()?;
+    let mut connection = Connection::open_in_memory()?;
+    migrations::apply_plan(&mut connection, &migrations::MIGRATIONS[..1])?;
+    connection.execute(
+        "INSERT INTO word_books VALUES (?1,'Test','Temporary',0,123,0)",
+        [id(1)?],
+    )?;
+    connection.execute("INSERT INTO vocabulary_words VALUES (?1,'ことば','ことば','词语','名词','N5','日本語','日语','[]',0,0,0,0,NULL,NULL,0,0,?2)", rusqlite::params![id(2)?,id(1)?])?;
+    let mut db = Database { connection };
     migrations::apply_plan(
         &mut db.connection,
         &[(1, ""), (2, "CREATE TABLE future_metadata(value TEXT);")],
@@ -454,7 +485,12 @@ fn future_migration_one_to_two_preserves_data() -> TestResult {
             .pragma_query_value(None, "user_version", |r| r.get::<_, i32>(0))?,
         2
     );
-    assert!(db.fetch_word(id(2)?)?.is_some());
+    assert_eq!(
+        db.connection
+            .query_row("SELECT count(*) FROM vocabulary_words", [], |r| r
+                .get::<_, i64>(0))?,
+        1
+    );
     Ok(())
 }
 #[test]

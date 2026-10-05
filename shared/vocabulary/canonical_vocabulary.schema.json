@@ -1,0 +1,217 @@
+{
+  "type": "object",
+  "properties": {
+    "formatVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "manifestVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "namespaceUUID": {
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    },
+    "createdAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generatedFrom": {
+      "type": "object",
+      "properties": {
+        "sourceMacSeedVersion": {
+          "type": "integer",
+          "const": 8
+        },
+        "pipeline": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceSha256": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "[0-9a-f]{64}"
+          }
+        }
+      },
+      "required": [
+        "sourceMacSeedVersion",
+        "pipeline",
+        "sourceSha256"
+      ],
+      "additionalProperties": false
+    },
+    "entryCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "books": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonicalKey": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[a-z0-9][a-z0-9:-]*"
+          },
+          "canonicalId": {
+            "type": "string",
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+          },
+          "identityAnchor": {
+            "type": "string",
+            "pattern": "[0-9a-f]{64}"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "jlptLevel": {
+            "type": "string",
+            "enum": [
+              "N5",
+              "N4",
+              "N3",
+              "N2",
+              "N1"
+            ]
+          },
+          "entryCount": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "canonicalKey",
+          "canonicalId",
+          "identityAnchor",
+          "name",
+          "description",
+          "jlptLevel",
+          "entryCount"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonicalKey": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[a-z0-9][a-z0-9:-]*"
+          },
+          "canonicalId": {
+            "type": "string",
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+          },
+          "identityAnchor": {
+            "type": "string",
+            "pattern": "[0-9a-f]{64}"
+          },
+          "expression": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reading": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meaningChinese": {
+            "type": "string",
+            "minLength": 1
+          },
+          "partOfSpeech": {
+            "type": "string"
+          },
+          "exampleJapanese": {
+            "type": "string"
+          },
+          "exampleChinese": {
+            "type": "string"
+          },
+          "jlptLevel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bookKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "loanwordSourceTerm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "loanwordSourceLanguageCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "loanwordIsWasei": {
+            "type": "boolean"
+          },
+          "loanwordIsPartial": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canonicalKey",
+          "canonicalId",
+          "identityAnchor",
+          "expression",
+          "reading",
+          "meaningChinese",
+          "partOfSpeech",
+          "exampleJapanese",
+          "exampleChinese",
+          "jlptLevel",
+          "tags",
+          "bookKey",
+          "loanwordSourceTerm",
+          "loanwordSourceLanguageCode",
+          "loanwordIsWasei",
+          "loanwordIsPartial"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "retiredKeys": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "formatVersion",
+    "manifestVersion",
+    "namespaceUUID",
+    "createdAt",
+    "generatedFrom",
+    "entryCount",
+    "books",
+    "entries",
+    "retiredKeys"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kotoba Canonical Vocabulary Manifest Format 1"
+}

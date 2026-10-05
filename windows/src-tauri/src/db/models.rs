@@ -2,10 +2,14 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use std::fmt;
 
 /// An externally supplied entity UUID, not a built-in lexical identity generator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(transparent)]
 pub struct Id(uuid::Uuid);
 
 impl Id {
+    pub fn new_local() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
     pub fn parse(value: &str) -> Result<Self, uuid::Error> {
         uuid::Uuid::parse_str(value).map(Self)
     }
@@ -32,7 +36,8 @@ impl FromSql for Id {
 }
 
 /// Signed UTC microseconds since 1970-01-01T00:00:00Z. Never locale text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(transparent)]
 pub struct Timestamp(pub i64);
 impl ToSql for Timestamp {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
@@ -47,7 +52,8 @@ impl FromSql for Timestamp {
 
 macro_rules! text_enum {
     ($name:ident { $($variant:ident => $raw:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
         pub enum $name { $($variant),+ }
         impl $name {
             pub fn as_str(self) -> &'static str { match self { $(Self::$variant => $raw),+ } }
@@ -67,7 +73,8 @@ text_enum!(LearningState { New => "new", Learning => "learning", Relearning => "
 text_enum!(ReviewRating { Again => "again", Hard => "hard", Good => "good", Easy => "easy" });
 text_enum!(ReviewErrorType { Meaning => "meaning", Reading => "reading", Spelling => "spelling", ExpressionDirection => "expressionDirection", ReadingDirection => "readingDirection" });
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WordBook {
     pub id: Id,
     pub name: String,
@@ -75,9 +82,12 @@ pub struct WordBook {
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub is_built_in: bool,
+    pub canonical_id: Option<Id>,
+    pub canonical_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VocabularyWord {
     pub id: Id,
     pub japanese: String,
@@ -97,9 +107,12 @@ pub struct VocabularyWord {
     pub loanword_is_wasei: bool,
     pub loanword_is_partial: bool,
     pub word_book_id: Option<Id>,
+    pub canonical_id: Option<Id>,
+    pub canonical_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LearningProgress {
     pub id: Id,
     pub word_id: Id,
@@ -113,7 +126,8 @@ pub struct LearningProgress {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReviewLog {
     pub id: Id,
     pub word_id: Id,

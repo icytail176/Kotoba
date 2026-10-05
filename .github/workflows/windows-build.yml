@@ -8,6 +8,11 @@ on:
     paths:
       - "windows/**"
       - ".github/workflows/windows-build.yml"
+      - "shared/vocabulary/**"
+      - "Kotoba/Resources/eggrolls_kotoba_*_strict.csv"
+      - "Kotoba/Resources/builtin_loanword_etymology.csv"
+      - "Kotoba/Services/BuiltInWordBookService.swift"
+      - "Kotoba/Services/PartOfSpeechTokenizer.swift"
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - name: Set up Node 26
         uses: actions/setup-node@v7
@@ -74,6 +80,12 @@ jobs:
       - name: Frontend build
         run: npm run build
 
+      - name: Canonical manifest validation and drift detection
+        run: python tools/vocabulary_manifest.py validate
+
+      - name: Canonical tooling tests
+        run: python -m unittest discover -s tools -p "test_*.py"
+
       - name: Rust formatting
         working-directory: windows/src-tauri
         run: cargo fmt --check
@@ -84,14 +96,31 @@ jobs:
 
       - name: Rust clippy
         working-directory: windows/src-tauri
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Rust tests (including file-backed SQLite)
         working-directory: windows/src-tauri
-        run: cargo test --locked
+        run: cargo test --locked -- --nocapture
 
       - name: Tauri Windows build
         run: npm run tauri build -- --ci
+
+      - name: Verify release embedded manifest outside repository
+        run: |
+          $resourceProbeExecutable = (Get-Item "src-tauri/target/release/kotoba-windows.exe").FullName
+          $resourceProbeDir = Join-Path $env:RUNNER_TEMP ("kotoba-manifest-probe-" + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $resourceProbeDir | Out-Null
+          try {
+            $resourceProbeOutput = Join-Path $resourceProbeDir "manifest.json"
+            $resourceProbeError = Join-Path $resourceProbeDir "stderr.txt"
+            $resourceProbeProcess = Start-Process -FilePath $resourceProbeExecutable -ArgumentList "--verify-embedded-manifest" -WorkingDirectory $resourceProbeDir -Wait -PassThru -RedirectStandardOutput $resourceProbeOutput -RedirectStandardError $resourceProbeError
+            if ($resourceProbeProcess.ExitCode -ne 0) { Get-Content $resourceProbeError; throw "Release embedded manifest probe failed" }
+            $resourceProbeData = Get-Content $resourceProbeOutput -Raw | ConvertFrom-Json
+            if ($resourceProbeData.entryCount -ne 10609 -or $resourceProbeData.manifestVersion -ne 1) { throw "Embedded manifest count/version mismatch" }
+            Get-Content $resourceProbeOutput
+          } finally {
+            Remove-Item -LiteralPath $resourceProbeDir -Recurse -Force
+          }
 
       - name: Verify Windows output
         run: |

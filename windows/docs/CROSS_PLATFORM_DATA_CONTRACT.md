@@ -1,18 +1,20 @@
 # Kotoba Cross-Platform Logical Data Contract
 
-审计日期：2026-10-04。Baseline：`feature/windows-client`，Phase 1 documentation HEAD `0b1e24f4567f93e32b6c6cf60b8a3c6099a4f53a`；已验证的 Phase 1 source SHA `956e510dff35aa848613386a9ca8c3f40a03eb00`。
+审计日期：2026-10-05。Phase 3 baseline：`feature/windows-client`，Phase 2 final HEAD `ab7cb58a0fa819d08eef9b97ee6dda30d8324d3a`；当前磁盘 Mac seedVersion 8 / SwiftData V3 只读审计。
 
-## Purpose and decision gates
+## Purpose and current identity status
 
-这是当前 macOS 数据语义和 Windows SQLite Schema 1 的逻辑映射，供未来跨平台设计使用。它不是 Backup 格式的替代品，也不是已定案的网络 sync protocol。Phase 2 不实现种词、导入、调度器、学习界面、账号或同步。
+Phase 3 now establishes a checked-in canonical manifest and separate local/canonical identity. This remains a logical model document, not a network sync protocol or Backup replacement.
 
-**BUILT-IN CROSS-PLATFORM ID STATUS: NOT READY**
+**CANONICAL ID SYSTEM: READY** — namespace `01dfa402-05c2-46ab-a30f-acd35aa26ac0`, manifestVersion 1, 10,609 immutable canonical word IDs and five canonical book IDs.
 
-**STABLE BUILTIN ID REQUIRES DESIGN CHANGE**
+**WINDOWS CANONICAL ID MAPPING: IMPLEMENTED** — independent local UUID v4 plus nullable canonical_id / canonical_key in SQLite Schema 2. Built-in importer requires canonical identity; custom/legacy rows may retain null.
 
-现有 UUID 能标识已持久化记录，但同一内置词条在独立安装中不会被实现保证生成相同 UUID。Phase 3 真实词库导入前，必须由用户决定 canonical lexical identity 与既有本地 UUID 的兼容方案。这里仅接受调用方提供的 UUID；没有选定或实现 Windows 专用词条 ID 算法。
+**MACOS CANONICAL ID MAPPING: NOT IMPLEMENTED** — current Mac random local UUIDs still do not identify the same built-in entry across independent installs. They are retained, never uploaded as global lexical identity.
 
-**MACOS SCHEMA CHANGE REQUIRED FOR FUTURE SYNC: UNDECIDED**。未来 ID 方案可能使用外部映射，也可能需要新增 canonical-key 字段；同步元数据是否放入 SwiftData 同样未定案。Phase 2 不创建 V4，不修改 macOS 数据。
+**Future macOS schema: RECOMMENDED V4**, analytically: add nullable canonicalID to WordBook/VocabularyWord while preserving local UUIDs and all learning relationships/history. The runtime/schema change is not performed in Phase 3.
+
+Manifest source of truth and update rules: `shared/vocabulary/canonical_vocabulary.json`, its schema/identity ledger, and `shared/vocabulary/README.md`. IDs are UUID v5(namespace, immutable canonicalKey), books use name `book:` + key. Neither mutable lexical fields nor current CSV index calculate IDs after bootstrap. Ledger reservations and fixed vectors protect identity; added/removed/changed source drift is detected without regeneration.
 
 ## macOS current schema source
 
@@ -59,7 +61,7 @@ Read-only audit sources（路径相对 repository root）：
 | ConjugationRecord（整个 entity） | 有 | 移除 | 无 | 不建表 | 不属于当前四实体模型 |
 | SpeechTuningRecord（整个 entity） | 有 | 移除 | 无 | 不建表 | 不属于当前四实体模型 |
 
-Windows SQLite **Schema 1** 是独立 physical version，不叫 SwiftData V3。数据库 migration 与 SwiftData/Backup version 分别维护。
+Windows SQLite **Schema 2** 是当前独立 physical version（历史 Schema 1 通过 migration 2 保留并扩展），不叫 SwiftData V3。数据库 migration、shared manifestVersion 1、Mac seedVersion 8 与 SwiftData/Backup version 分别维护。
 
 ## Logical entities and Windows SQLite mapping
 
@@ -75,13 +77,13 @@ Windows SQLite **Schema 1** 是独立 physical version，不叫 SwiftData V3。�
 | createdAt | createdAt: Date | created_at INTEGER UTCμs | N / N | Y | Y? | Y | 创建时间；同 ID upsert 保留旧值 |
 | updatedAt | updatedAt: Date | updated_at INTEGER UTCμs | N / N | Y | Y? | N | 调用方提供的修改时间；不自动解决冲突 |
 | isBuiltIn | isBuiltIn: Bool | is_built_in INTEGER Bool | N / N | Y | Y? | N | 内置标志不证明跨安装身份 |
-| words | words: [VocabularyWord] cascade | vocabulary_words.word_book_id FK 逆查询 | 无集合 null | Mac relationship / Win derived | 关系候选 | N | 删除书会级联词及其依赖；Phase 2 无删除书 IPC |
+| words | words: [VocabularyWord] cascade | vocabulary_words.word_book_id FK 逆查询 | 无集合 null | Mac relationship / Win derived | 关系候选 | N | 删除书会级联词及其依赖；无删除书 IPC |
 
 ### VocabularyWord → vocabulary_words
 
 | Logical name | macOS source field | SQLite field / type | Null? Mac / Win | Persist | Sync? | Immutable | Meaning / notes |
 |---|---|---|---|---|---|---|---|
-| id | id: UUID | id TEXT UUID PK | N / N | Y | Y? | Y | 持久化记录身份；built-in 跨平台 gate 未通过 |
+| id | id: UUID | id TEXT UUID PK | N / N | Y | Y? | Y | 持久化记录身份；built-in 跨平台 已由独立 manifest 建立（Mac 映射未实现） |
 | expression | japanese: String | japanese TEXT | N / N | Y | Y? | N | 日语写法，可能修订，不作为 PK |
 | reading | kana: String | kana TEXT | N / N | Y | Y? | N | 假名读音，可修订，不作为 PK |
 | meaningChinese | chineseMeaning: String | chinese_meaning TEXT | N / N | Y | Y? | N | 中文释义 |
@@ -140,9 +142,9 @@ macOS 关系的 Optional 不等于合法备份可以有 orphan。Backup 预检�
 | spellingWrongCount | spellingWrongCount: Int | spelling_wrong_count INTEGER >=0 | N / N | Y | Y? | N* | 拼写错误计数 |
 | repeatedWrongCount | repeatedWrongCount: Int | repeated_wrong_count INTEGER >=0 | N / N | Y | Y? | N* | 重复错误计数 |
 
-`*`：Phase 2 repository 不提供任何 log UPDATE，只有 insert/query/显式 reset delete；当前 macOS 会补充错误元数据，Backup overwriteByID 还允许替换同 ID 日志。未来同步需定义 finalize/revision/enrichment 策略，不能声称现有所有字段已不可变。ReviewLog 当前没有 createdAt / updatedAt，不发明这些历史时间。
+`*`：repository 不提供任何 log UPDATE，只有 insert/query/显式 reset delete；当前 macOS 会补充错误元数据，Backup overwriteByID 还允许替换同 ID 日志。未来同步需定义 finalize/revision/enrichment 策略，不能声称现有所有字段已不可变。ReviewLog 当前没有 createdAt / updatedAt，不发明这些历史时间。
 
-## Identity rules and built-in ID analysis
+## Historical Mac local-ID audit and Phase 3 canonical identity
 
 四实体持久化身份均为 `@Attribute(.unique) id: UUID`，构造器默认 `UUID()`。已有记录被保存、备份/恢复时保持这个 UUID。UUID 格式标准化只解决编码一致，不解决同词条跨安装 canonical identity。
 
@@ -166,13 +168,15 @@ macOS 关系的 Optional 不等于合法备份可以有 orphan。Backup 预检�
 
 依据：`BuiltInWordBookService.swift` 的 `loadIfNeeded`、`makeWord`、`refresh`、`preferredKeeper`、equivalent-key/integrity 检查、词源 sidecar 应用；模型默认 id；对应本地保留测试。
 
-### User decision required before Phase 3 (no implementation selected)
+### Historical options and selected Phase 3 design
 
 1. **Deterministic namespace UUID**：先给每个 lexical entry 分配持久不可变 source key，再用版本固定的 namespace + key 算 UUIDv5。不能直接 hash 可修改 expression/reading。需旧随机 UUID → canonical UUID 的 alias 与 progress/log 迁移，不能直接换 PK。
 2. **Immutable source-key identity**：资源加入永久 lexical key，canonical identity 使用该 key；record UUID 保持本地实体身份。需要跨平台 key validation、同义/多义/跨等级建模和已有记录回填策略。
 3. **Shared canonical ID manifest**：维护含永久 entry key 与 canonical UUID 的共享 manifest；Mac/Windows 共读，旧 UUID 通过 alias 映射保留历史。需要 manifest 修订、拆分/合并词义、资源升级和冲突处理规则。
 
-三个方案都需处理内置书 identity、既有随机词 ID、用户自建词、重复 repair 以及同一用户跨设备 progress identity。Phase 2 没有生成真实词条 UUID，没有新增 v4/v5 UUID generation feature，没有导入种词。测试 UUID 是隔离 fixture，与词库身份方案无关。
+Phase 3 selects shared canonical manifest + immutable source keys + UUID v5 in one fixed namespace. Local IDs are independent random UUID v4 on Windows and existing random UUIDs on Mac. All 10,609 entries, including ten cross-book duplicate pairs, are preserved. The ledger reserves old keys/IDs; retirements do not reuse them. UUID representation and lexical canonical identity remain distinct concepts.
+
+Future Mac V4 migration must preflight exact book/expression/reading matches and reviewed unambiguous aliases, leave ambiguous/edited records canonicalID nil with diagnostics, and preserve local word/book/progress/log IDs, relationships, favorite, archive and history. Legacy local UUID aliases are diagnostic/migration aids, not cloud lexical IDs. See shared README for the complete plan.
 
 ## Internal SRS state encoding
 
@@ -214,7 +218,7 @@ Windows repository 的 insert 是普通 INSERT（重复 PK 失败），query 按
 - vocabulary_words 1 → review_logs 0..many，word_id NOT NULL。
 - FK 全部 ON DELETE CASCADE 对应 Mac 父对象 cascade；每个 connection 都显式 PRAGMA foreign_keys = ON。Phase 2 不暴露删除书/词的命令，未来确认与 tombstone 设计须先完成。
 - 四表 STRICT；UUID PK/关系格式检查；Bool 限 0/1；counter 非负；state/rating 封闭 CHECK；tags 为有效 JSON array，Rust 再校验 Vec<String>。error_types 由 typed repository 编码/读取，未知 raw 返回错误。
-- Scalar 非可空字符串可为空；Backup 对 book name/japanese/kana/meaning 的非空预检是更高层规则，未来 importer 必须实现，Schema 1 不假装已经提供导入 validation。
+- Scalar 非可空字符串可为空；Backup 对 book name/japanese/kana/meaning 的非空预检是更高层规则，Schema 2 manifest importer 已校验 lexical required fields；历史 Schema 1 本身没有导入 validation。
 - 不加 japanese+kana UNIQUE，不以表内容推定 lexical identity；各表 PK 不施加跨表 UUID UNIQUE（Backup 预检更严格）。
 - Book/word/progress 显式 upsert 按同一个 id 修改字段，保留 created_at。不比较 updated_at，不执行 last-write-wins，不自动发明 ID；progress 同 ID 换 word 被拒绝，同 word 第二 progress 被 UNIQUE 拒绝。
 - 索引：words_by_book(word_book_id)，progress_due(due_at) 对五状态中三种 due 状态的 partial index，logs_by_word_date(word_id, reviewed_at DESC, id)；主键/UNIQUE 已支持 ID 和 progress-by-word 查询。
@@ -233,7 +237,7 @@ UTC 编码不定义用户时区或「一天」的调度含义。due day 判断�
 
 **TEXT canonical lowercase hyphenated 36 字符**：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx。Rust Id 从合法 UUID 输入解析后按 canonical lower 写入；SQL CHECK 与 FromSql 拒绝非 canonical 持久化表示。无 BLOB / uppercase 混存。
 
-这是 record UUID representation；built-in canonical identity gate 仍为 NOT READY。不存在把 current Mac random UUID 直接当跨独立安装共享 lexical ID 的结论。
+这是 record UUID representation；canonical IDs now come from the checked-in manifest. Current Mac random UUID still is not cross-install lexical identity; Mac mapping remains unimplemented.
 
 ### Boolean encoding
 
@@ -257,31 +261,43 @@ Restore/merge 根据模式使用时间较新内容、skip duplicates 或 overwri
 
 **Backup schema != Sync schema**：缺少账户范围、设备身份、词条 canonical alias、delete tombstone、revision/checkpoint、并发评分合并等；ISO8601 精度也需单独约定。这里只复用已明确的实体/raw semantics，不实现 Windows backup reader。
 
-## Windows database lifecycle and migration
+## Windows Schema 2 lifecycle
 
 使用 `rusqlite 0.40.2` + **bundled**（libsqlite3-sys 0.38.2，bundled SQLite 3.53.2）；当前稳定版本经 docs.rs 与 Cargo 解析确认。Tauri 2 / Rust 1.99 以本地编译和 Windows MSVC CI 验证兼容性，锁文件固定解析结果。SQLite 编入原生程序，不要求另装 SQLite DLL。
 
 Tauri `app.path().app_data_dir()` 取得目录，再 mkdir/open `kotoba.sqlite3`。当前 identifier `com.fumi.kotoba.windows`；macOS Tauri 使用自身 OS app-data 目录，与原生 `com.fumi.Kotoba` SwiftData store 分离。Windows 使用 Tauri 的 OS app-data 位置，不从 repository/cwd/exe dir 推导，不 hard-code 用户路径。
 
-`Database` 负责 open、5 秒 busy timeout、foreign_keys、migration、repository。单连接在 Tauri managed Mutex 中。`lib.rs` 仅 setup / commands；db/{models,migrations,repository,mod}.rs + schema_1.sql 分离。统一 DatabaseError 传播 SQLite / IO / encoding / schema / migration 错误；不 unwrap、expect、自动删除或 reset。
+`Database` 负责 open、5 秒 busy timeout、foreign_keys、migration、repository。单连接在 Tauri managed Mutex 中。`lib.rs` 负责 setup / commands；db/{models,migrations,repository,builtin,reads,mod}.rs 与两个历史 SQL migrations 分离。统一 DatabaseError 传播 SQLite / IO / encoding / schema / migration 错误；不 unwrap、expect、自动删除或 reset。
 
-**PRAGMA user_version = 1**。Migration plan 为按序 SQL，IMMEDIATE transaction 内读取 version、应用 pending migration、更新 marker 并提交；失败 rollback DDL / data / marker。重复 open 不重复创建；未知高版本拒绝且不重置；version 1 必要 columns 缺失返回错误。将来加 migration 2；测试用临时 plan 已证明 1 → 2 保留既有数据，但 production 仅含 migration 1。此验证并非对任意外部篡改 schema 的完整 fingerprint/constraint 审计。
+**PRAGMA user_version = 2**。Migration plan 保留原始 migration 1，新增真实 migration 2；IMMEDIATE transaction 内读取 version、依次应用 pending migration、更新 marker 并提交。失败 rollback DDL / data / marker，绝不 reset。真实 Schema 1 文件迁移测试保留四表全部旧字段、UUID 与关系；失败的 migration 2 测试保留 version 1、旧列和旧记录。重复 open 不重复迁移，未知高版本拒绝，必要 columns 缺失报错。此验证并非对任意外部篡改 schema 的完整 fingerprint/constraint 审计。
 
-Phase 2 不配置 WAL/同步 tuning、加密、备份或跨进程 sync。测试使用 in-memory / tempfile，无生产路径依赖，文件 handles drop 后由 tempfile 清理。生产从不自动清空已有 DB。
+当前不配置 WAL/同步 tuning、加密、备份或跨进程 sync。测试使用 in-memory / tempfile，无生产路径依赖，文件 handles drop 后由 tempfile 清理。生产从不自动清空已有 DB。
 
-`database_info` 返回 schemaVersion、display-safe `app-data/kotoba.sqlite3` 描述与四表 counts；无用户绝对路径，无 arbitrary SQL。Svelte 只有 typed invoke 和 connected placeholder，不暴露 repository mutation IPC。
+`database_info` 返回 schemaVersion、manifestVersion、display-safe `app-data/kotoba.sqlite3` 描述与四表 counts；无用户绝对路径，无 arbitrary SQL。Svelte 通过 typed invoke 展示数量和基础搜索，不暴露 repository mutation IPC。
 
 ## Future sync considerations, compatibility risks and open questions
 
-- 必须先决定 canonical built-in word/book identity、旧 UUID aliases、资源修订/拆分/合并及用户自建词 identity。用户词的新增/跨设备重复与 owner 概念仅预留，未实现。
+- canonical built-in identity 已由 manifest 建立；仍需设计旧 UUID aliases、资源修订/拆分/合并及用户自建词 identity。用户词的新增/跨设备重复与 owner 概念仅预留，未实现。
 - Progress 是 mutable snapshot，formal logs 更接近事件；多设备独立评分不能靠简单 counter 相加或 updatedAt LWW 证明调度正确。是否 event replay、谁能改 suspended、如何 reset 都待决定。
 - Mac spelling enrichment 修改既有 log；需要日志 revision/finalization 或独立 enrichment event，未决定 schema 改动。
 - 当前无 tombstone、account/device/revision metadata；archive 不等于 delete；reset 的传播与 cascade 的跨设备语义未定义。可能外部 side table 足够，可能未来 V4，需要正式方案后评估。
 - 微秒量化、Backup 秒级日期、JS i64 边界、DST/calendar/timezone 与 unknown raw value 的处理需 adapter contract tests。
 - Mac optional relationships / Windows complete progress/log graph、Backup cross-entity UUID checks / SQL per-table PK、字符串非空、源词合法性规则有显式边界，不是完成了互导。
 - SQL upsert 是显式本地操作，不是 import merge 或同步冲突策略。数据库初始化报错不删除用户数据。
-- 当前 10,609 内置词未导入；没有 SQLite → SwiftData/Backup 转换器；Windows installer 有 CI build evidence，物理 Windows UI/runtime 与签名仍未验证/配置。
+- Windows 已导入 10,609 条，Mac canonical mapping 尚未实现；没有 SQLite → SwiftData/Backup 转换器；Windows installer 有 CI build evidence，物理 Windows UI/runtime 与签名仍未验证/配置。
 
 ## Explicit non-goals
 
-不改 macOS SwiftData V1/V2/V3、Backup V3、UUID、seedVersion、ReviewScheduler、StudySession、ReviewLog 或 UI；不建立 V4。无 Supabase/Auth/network sync、Windows SRS/study/wordbook/statistics/spelling/import UI。Phase 2 的成功仅表示 audit + storage foundation + native tests/build 通过，不表示 stable-ID gate 已通过。
+不改 macOS SwiftData V1/V2/V3、Backup V3、UUID、seedVersion、ReviewScheduler、StudySession、ReviewLog 或 UI；不建立 V4。无 Supabase/Auth/network sync、Windows SRS/study/wordbook/statistics/spelling/import UI。Phase 3 adds only canonical manifest/seed/read diagnostics; it does not implement Mac mapping or cloud sync.
+
+## Phase 3 Schema 2 additions and importer ownership
+
+Migration 2 adds WordBook and VocabularyWord `canonical_id TEXT UUID?`, `canonical_key TEXT?` as paired nullable fields, partial UNIQUE indices and immutable-identity triggers. Existing Schema 1 SQL/rows are preserved. Local id/createdAt semantics stay unchanged. Source built-ins require canonical identity in importer/read service; future custom content may have null. The current Mac model has no equivalent canonical field yet. Both canonical fields are persisted sync candidates and immutable after assignment.
+
+`built_in_content` is separate content metadata: manifest_version, format_version, namespace_uuid, manifest_fingerprint and identity_fingerprint. It is not SwiftData schema version, not PRAGMA user_version and not a sync checkpoint. Content/identity fingerprints use UUID v5 over deterministic serialized data, not security signatures.
+
+One validated transaction imports five books and 10,609 entries using prepared statements. Content updates retain local IDs, creation times, isFavorite, isArchived, all progress and all logs. Only lexical/source fields and book association may update; updatedAt changes only with actual lexical updates. Missing manifest entries are retained with existing flags/history; future archive/tombstone policy remains undecided. No progress/log is created during seed.
+
+Typed Rust reads expose book summaries, get_word by local id, canonical lookup internally, paginated lists and literal substring search. Limits are 1..100, offsets unsigned, search capped at 200 characters; empty search returns no results. All text is parameterized and LIKE escapes percent/underscore/backslash. Frontend IPC never sends all 10,609 rows or arbitrary SQL.
+
+Manifest and ledger are compile-time embedded. Actual release EXE probe runs from empty temp cwd in CI, and native tempfile tests verify schema 2/import/counts/reopen/idempotency. Diagnostics show Schema 2 / built-in count / per-book counts and a small search form; no study UI or scheduler.

@@ -18,7 +18,7 @@ fn decode_errors(row: &Row<'_>, index: usize) -> rusqlite::Result<Vec<ReviewErro
         .collect()
 }
 
-fn read_word_books(row: &Row<'_>) -> rusqlite::Result<WordBook> {
+pub(super) fn read_word_books(row: &Row<'_>) -> rusqlite::Result<WordBook> {
     Ok(WordBook {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -26,10 +26,12 @@ fn read_word_books(row: &Row<'_>) -> rusqlite::Result<WordBook> {
         created_at: row.get(3)?,
         updated_at: row.get(4)?,
         is_built_in: row.get(5)?,
+        canonical_id: row.get(6)?,
+        canonical_key: row.get(7)?,
     })
 }
 
-fn read_vocabulary_words(row: &Row<'_>) -> rusqlite::Result<VocabularyWord> {
+pub(super) fn read_vocabulary_words(row: &Row<'_>) -> rusqlite::Result<VocabularyWord> {
     Ok(VocabularyWord {
         id: row.get(0)?,
         japanese: row.get(1)?,
@@ -49,6 +51,8 @@ fn read_vocabulary_words(row: &Row<'_>) -> rusqlite::Result<VocabularyWord> {
         loanword_is_wasei: row.get(15)?,
         loanword_is_partial: row.get(16)?,
         word_book_id: row.get(17)?,
+        canonical_id: row.get(18)?,
+        canonical_key: row.get(19)?,
     })
 }
 
@@ -90,14 +94,19 @@ fn read_review_logs(row: &Row<'_>) -> rusqlite::Result<ReviewLog> {
 
 impl Database {
     pub fn upsert_book(&self, item: &WordBook) -> Result<()> {
-        self.connection.execute("INSERT INTO word_books (id,name,book_description,created_at,updated_at,is_built_in) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET name=excluded.name,book_description=excluded.book_description,updated_at=excluded.updated_at,is_built_in=excluded.is_built_in", params![item.id, item.name, item.book_description, item.created_at, item.updated_at, item.is_built_in])?;
+        let changed = self.connection.execute("INSERT INTO word_books (id,name,book_description,created_at,updated_at,is_built_in,canonical_id,canonical_key) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name,book_description=excluded.book_description,updated_at=excluded.updated_at,is_built_in=excluded.is_built_in WHERE word_books.canonical_id IS excluded.canonical_id AND word_books.canonical_key IS excluded.canonical_key", params![item.id, item.name, item.book_description, item.created_at, item.updated_at, item.is_built_in, item.canonical_id, item.canonical_key])?;
+        if changed != 1 {
+            return Err(DatabaseError::InvalidData(
+                "canonical identity cannot change in local upsert",
+            ));
+        }
         Ok(())
     }
     pub fn fetch_book(&self, id: Id) -> Result<Option<WordBook>> {
-        Ok(self.connection.query_row("SELECT id,name,book_description,created_at,updated_at,is_built_in FROM word_books WHERE id=?1", [id], read_word_books).optional()?)
+        Ok(self.connection.query_row("SELECT id,name,book_description,created_at,updated_at,is_built_in,canonical_id,canonical_key FROM word_books WHERE id=?1", [id], read_word_books).optional()?)
     }
     pub fn list_books(&self) -> Result<Vec<WordBook>> {
-        let mut query = self.connection.prepare("SELECT id,name,book_description,created_at,updated_at,is_built_in FROM word_books ORDER BY created_at,id")?;
+        let mut query = self.connection.prepare("SELECT id,name,book_description,created_at,updated_at,is_built_in,canonical_id,canonical_key FROM word_books ORDER BY created_at,id")?;
         let records = query
             .query_map([], read_word_books)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -105,14 +114,19 @@ impl Database {
     }
     pub fn upsert_word(&self, item: &VocabularyWord) -> Result<()> {
         let tags = serde_json::to_string(&item.tags)?;
-        self.connection.execute("INSERT INTO vocabulary_words (id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) ON CONFLICT(id) DO UPDATE SET japanese=excluded.japanese,kana=excluded.kana,chinese_meaning=excluded.chinese_meaning,part_of_speech=excluded.part_of_speech,jlpt_level=excluded.jlpt_level,example_japanese=excluded.example_japanese,example_chinese=excluded.example_chinese,tags=excluded.tags,updated_at=excluded.updated_at,is_archived=excluded.is_archived,is_favorite=excluded.is_favorite,loanword_source_term=excluded.loanword_source_term,loanword_source_language_code=excluded.loanword_source_language_code,loanword_is_wasei=excluded.loanword_is_wasei,loanword_is_partial=excluded.loanword_is_partial,word_book_id=excluded.word_book_id", params![item.id, item.japanese, item.kana, item.chinese_meaning, item.part_of_speech, item.jlpt_level, item.example_japanese, item.example_chinese, tags, item.created_at, item.updated_at, item.is_archived, item.is_favorite, item.loanword_source_term, item.loanword_source_language_code, item.loanword_is_wasei, item.loanword_is_partial, item.word_book_id])?;
+        let changed = self.connection.execute("INSERT INTO vocabulary_words (id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id,canonical_id,canonical_key) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20) ON CONFLICT(id) DO UPDATE SET japanese=excluded.japanese,kana=excluded.kana,chinese_meaning=excluded.chinese_meaning,part_of_speech=excluded.part_of_speech,jlpt_level=excluded.jlpt_level,example_japanese=excluded.example_japanese,example_chinese=excluded.example_chinese,tags=excluded.tags,updated_at=excluded.updated_at,is_archived=excluded.is_archived,is_favorite=excluded.is_favorite,loanword_source_term=excluded.loanword_source_term,loanword_source_language_code=excluded.loanword_source_language_code,loanword_is_wasei=excluded.loanword_is_wasei,loanword_is_partial=excluded.loanword_is_partial,word_book_id=excluded.word_book_id WHERE vocabulary_words.canonical_id IS excluded.canonical_id AND vocabulary_words.canonical_key IS excluded.canonical_key", params![item.id, item.japanese, item.kana, item.chinese_meaning, item.part_of_speech, item.jlpt_level, item.example_japanese, item.example_chinese, tags, item.created_at, item.updated_at, item.is_archived, item.is_favorite, item.loanword_source_term, item.loanword_source_language_code, item.loanword_is_wasei, item.loanword_is_partial, item.word_book_id, item.canonical_id, item.canonical_key])?;
+        if changed != 1 {
+            return Err(DatabaseError::InvalidData(
+                "canonical identity cannot change in local upsert",
+            ));
+        }
         Ok(())
     }
     pub fn fetch_word(&self, id: Id) -> Result<Option<VocabularyWord>> {
-        Ok(self.connection.query_row("SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id FROM vocabulary_words WHERE id=?1", [id], read_vocabulary_words).optional()?)
+        Ok(self.connection.query_row("SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id,canonical_id,canonical_key FROM vocabulary_words WHERE id=?1", [id], read_vocabulary_words).optional()?)
     }
     pub fn words_by_book(&self, id: Id) -> Result<Vec<VocabularyWord>> {
-        let mut query = self.connection.prepare("SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id FROM vocabulary_words WHERE word_book_id=?1 ORDER BY created_at,id")?;
+        let mut query = self.connection.prepare("SELECT id,japanese,kana,chinese_meaning,part_of_speech,jlpt_level,example_japanese,example_chinese,tags,created_at,updated_at,is_archived,is_favorite,loanword_source_term,loanword_source_language_code,loanword_is_wasei,loanword_is_partial,word_book_id,canonical_id,canonical_key FROM vocabulary_words WHERE word_book_id=?1 ORDER BY created_at,id")?;
         let records = query
             .query_map([id], read_vocabulary_words)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
