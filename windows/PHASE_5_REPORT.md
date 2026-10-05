@@ -6,8 +6,8 @@
 
 - Branch: `feature/windows-client`.
 - Base HEAD: `924c4ef83e5422857f652655fd3f323270b09bf6`; starting working tree clean and synchronized.
-- Implementation commit: pending — `Add Windows SRS scheduler and review persistence`.
-- Final HEAD: pending CI/report finalization. Final branch tip will be given in the final chat; a document cannot include the hash of the commit containing itself.
+- Implementation commit: `6ad6f8563ebf0c72245340b00f36cb6d21083b5a` — `Add Windows SRS scheduler and review persistence`.
+- Final HEAD: this report's subsequent documentation-only commit, with the complete Windows workflow run again. Its exact hash and CI run are given in the final chat; a document cannot include the hash of the commit containing itself. Validated source HEAD: `6ad6f8563ebf0c72245340b00f36cb6d21083b5a`.
 - No main merge, PR, tag, Release or Supabase work.
 
 ## macOS Scheduler Audit
@@ -115,7 +115,14 @@ The ignored temporary dev runner copied the current debug executable into the na
 
 ## Windows CI
 
-Run / URL / native tests / SRS tests / Tauri build: pending implementation push and full native workflow.
+**PASS**. Implementation run [37302909883](https://github.com/icytail176/Kotoba/actions/runs/37302909883), source HEAD `6ad6f8563ebf0c72245340b00f36cb6d21083b5a`, job `111739648838`, completed successfully on 2026-10-05, 11:26:13–11:35:58 UTC.
+
+- Native environment: Windows Server 2025, stable Rust MSVC 1.99.0, Node 26.10.0, npm 11.19.1.
+- All existing gates passed: frontend check/tests/build, manifest validation/drift, canonical tooling, Rust formatting/check/Clippy/tests, Windows Tauri build, release embedded-manifest probe, output verification and artifact upload.
+- Rust: **64 passed, 0 failed**, including all **19 SRS tests** and the **50 Mac-generated golden vectors**, in 14.53 seconds. DST/timezone, file-backed persistence, actual commit failure and automatic-mastery retry tests ran on the Windows native runner.
+- Frontend: **7/7**; Svelte check **0 errors / 0 warnings**; static build PASS. Canonical tooling **11/11**; manifest drift empty.
+- Tauri release executable: `kotoba-windows.exe`, **15,857,152 bytes**. MSI: `Kotoba_0.1.0_x64_en-US.msi`, **5,271,552 bytes**. NSIS: `Kotoba_0.1.0_x64-setup.exe`, **3,382,672 bytes**.
+- Release executable probe outside the repository confirmed manifest version 1, **10,609** entries and book counts **802 / 755 / 1,817 / 3,206 / 4,029**. Uploaded artifact `kotoba-windows-phase1`, ID **11342198271**; existing naming retained.
 
 All existing workflow gates remain; cargo test automatically discovers SRS tests. No new CI gate, artifact naming, release or installer pipeline changes needed.
 
@@ -136,4 +143,4 @@ Phase 5 changes are restricted to `windows/**`. `Kotoba/**`, `KotobaTests/**`, `
 
 ## Phase 5 Result
 
-Local checks, scheduler/persistence parity vectors and macOS Tauri audit PASS. Final result pending complete Windows CI.
+**PASS**. Local checks, scheduler/persistence parity vectors, macOS Tauri read-only UI audit and complete native Windows CI passed. Phase 5 formal core and atomic persistence are ready for future StudySession integration with an explicit calendar context. Scope and limitations above remain part of this result.
