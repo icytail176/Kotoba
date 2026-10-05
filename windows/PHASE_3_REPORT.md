@@ -8,7 +8,7 @@
 - Base HEAD: `ab7cb58a0fa819d08eef9b97ee6dda30d8324d3a` (Phase 2 final documentation; full Windows CI passed).
 - Starting working tree: clean; no user changes overwritten.
 - Implementation commit: `4efdd5c153db2129221de81290e1c67fe44fa5c9` — `Add canonical vocabulary manifest and Windows seed`.
-- Final HEAD: implementation SHA will be recorded after commit; any report-finalization commit is documentation-only, pushed normally with full CI. A document cannot contain the hash of the commit containing itself; final branch tip is given in the final chat and by `git rev-parse HEAD`.
+- Final HEAD / validated runtime source: `b09d55bcd258692cde0ab6c33683dc1bc22812d2` (implementation plus minimal CRLF tooling repair). This report-finalization commit is documentation-only and is pushed normally with all CI gates. A document cannot contain the hash of the commit containing itself; final branch tip is given in the final chat and by `git rev-parse HEAD`.
 - No main merge, PR, tag or Release.
 
 ## Canonical Identity
@@ -93,7 +93,7 @@ Rust parses/validates the compiled manifest, then imports five books and 10,609 
 - Changed lexical metadata requires explicit new manifestVersion; updates lexical/source fields and updatedAt only when content changed. Same-version drift, namespace changes and downgrade reject without mutation.
 - Missing entries are retained unchanged with flags/history, never hard-deleted or automatically unarchived. Synthetic v2 removal/correction tests exercise this ownership policy without publishing a real v2.
 - Injected mid-import failure rolls back all partial built-ins/content marker while retaining existing custom word/book/progress/log.
-- Benchmark-like native tempfile fresh-import measurement: **2.213 seconds** on macOS under the parallel test suite (10,609 words; single transaction). No fragile latency threshold; Windows measurement will be recorded from native CI output.
+- Benchmark-like native tempfile fresh-import measurement: **2.213 seconds** on macOS under the parallel test suite (10,609 words; single transaction). Windows native MSVC measurement: **2.122 seconds** (2.1216708s) under its parallel suite. No fragile latency threshold.
 - No learning progress or review logs are created during seed. Windows SRS is not implemented.
 
 ## Windows Reads
@@ -137,7 +137,20 @@ RFC DNS UUID v5 vector is also checked. Python tests cover pristine bootstrap re
 
 ## Windows CI
 
-Implementation pushed. First run 37255897071 failed at pipeline hash validation because Windows Git checked text out as CRLF; no lexical/identity drift. The smallest repair normalizes only CRLF → LF before hashing, adds CRLF/real-change regression tests and leaves all manifest identities/counts unchanged. Replacement native run pending. All existing npm ci/check/build, Rust fmt/check/clippy/test and Tauri Windows build gates remain enabled. Added manifest validation/tool tests and actual release EXE embedded-resource probe from empty temp cwd. Native test uses tempfile SQLite, real migration 2, exact full import, close/reopen and second-import identity preservation. No continue-on-error or skip.
+- Run ID: **37256085401**.
+- URL: https://github.com/icytail176/Kotoba/actions/runs/37256085401
+- Head SHA: `b09d55bcd258692cde0ab6c33683dc1bc22812d2`.
+- Result: **success**; job `111593341628`, 2026-10-05 02:36:47–02:48:29 UTC (**11m42s**).
+- Native environment: Windows X64, win25-vs2026 / 20260925.250.1; Rust/Cargo 1.99.0 MSVC; Node 26 / npm 11.
+- npm ci / frontend check and build / manifest validation and drift / 11 Python tooling tests / Rust fmt, check, clippy all-targets / cargo test / Tauri build: **all PASS**.
+- Native Rust tests: **40 passed, 0 failed, 0 ignored**, 12.16s test execution. File-backed full manifest import/migration/counts/close/reopen/second-import test passed; fresh import measured **2.1216708s**.
+- SQLite counts: N5 802, N4 755, N3 1,817, N2 3,206, N1 4,029; total 10,609, five books; second import inserted zero.
+- Actual release EXE `--verify-embedded-manifest` launched by Start-Process from an empty unique temporary cwd: **PASS**, exit 0, manifestVersion 1, entryCount 10,609 and five exact counts. This probe opens no production database and does not rely on repository-relative runtime resources.
+- Tauri release produced **two installers**: `Kotoba_0.1.0_x64_en-US.msi` (5,267,456 bytes) and `Kotoba_0.1.0_x64-setup.exe` (3,374,936 bytes); `kotoba-windows.exe` 15,853,568 bytes. Nonempty output/SHA-256 verification passed.
+- Artifact: `kotoba-windows-phase1` (existing pipeline name retained), ID **11322818314**, 13,365,156 bytes, uploaded successfully with 7-day retention.
+- First attempt [37255897071](https://github.com/icytail176/Kotoba/actions/runs/37255897071) failed at source pipeline hash validation: Windows Git CRLF checkout changed raw bytes, with no lexical/identity drift. Repair commit `b09d55b` normalizes only CRLF → LF before hashing and adds CRLF/real-code-change regression tests. Manifest/ledger identities and all counts remained unchanged. Replacement full run above passed.
+- Every original CI gate remains enabled. No continue-on-error, skipped test/validator, count adjustment, or force push. The report-finalization push also runs the full unchanged pipeline; its latest run/tip are reported in final chat.
+
 
 ## macOS Project Isolation
 
@@ -157,4 +170,4 @@ Mac canonical mapping not implemented; no V4 runtime migration. Windows SRS, rom
 
 ## Phase 3 Result
 
-**PENDING WINDOWS CI** — local validation passes; final result will be recorded after the complete native run.
+**PASS** — checked-in canonical identity, exact Windows seed, preservation/migration/read tests, local validation and full native Windows MSVC/installer/embedded-resource gates passed. Mac integration remains explicitly unimplemented.
