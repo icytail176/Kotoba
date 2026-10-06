@@ -1,9 +1,16 @@
+pub mod backup;
 mod builtin;
+pub mod csv;
+pub mod history;
 mod migrations;
 pub mod models;
+pub mod product_mutations;
+pub mod product_reads;
+pub mod quality;
 mod reads;
 mod repository;
 pub(crate) mod srs_repository;
+pub mod statistics;
 mod study_repository;
 mod ui_reads;
 pub use ui_reads::{PagedWords, WordBookSummary, WordDetail};
@@ -111,6 +118,7 @@ impl Database {
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
         migrations::apply(&mut connection)?;
+        product_reads::register(&connection)?;
         Ok(Self { connection })
     }
     pub fn info(&self) -> Result<DatabaseInfo> {
@@ -151,3 +159,6 @@ mod tests;
 
 #[cfg(test)]
 mod builtin_tests;
+
+#[cfg(test)]
+mod product_tests;

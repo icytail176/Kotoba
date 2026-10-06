@@ -1,29 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { vocabularyService } from "$lib/services/vocabulary";
-  import type { WordBookSummary } from "$lib/types/vocabulary";
-  import { LatestRead, type ReadState } from "./state";
-  import ReadStatus from "$lib/components/ReadStatus.svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  let { open }: { open: (book: WordBookSummary) => void } = $props();
-  let state = $state<ReadState<WordBookSummary[]>>({status:"loading",data:null});
-  const resource = new LatestRead<WordBookSummary[]>(value => {state=value;});
-  const refresh = () => {void resource.run(vocabularyService.listBooks);};
-  onMount(refresh); onDestroy(() => resource.dispose());
-  let total = $derived(state.data?.reduce((sum,book) => sum + book.wordCount,0) ?? 0);
+ import {onMount,onDestroy} from 'svelte';import {productService} from '../product/service.ts';import type {ProductBook} from '../product/types.ts';import type {WordBookSummary} from '../types/vocabulary.ts';import {LatestRead,type ReadState} from './state.ts';import ReadStatus from '../components/ReadStatus.svelte';import StudyDialog from '../study/StudyDialog.svelte';
+ let {open}:{open:(book:WordBookSummary)=>void}=$props();let view=$state<ReadState<ProductBook[]>>({status:'loading',data:null});const read=new LatestRead<ProductBook[]>(v=>{view=v;});const refresh=()=>{void read.run(productService.books);};onMount(refresh);onDestroy(()=>read.dispose());
+ let editor=$state(false);let selected=$state<ProductBook|null>(null);let name=$state('');let description=$state('');let pending=$state(false);let error=$state('');let confirmation=$state<'reset'|'delete'|null>(null);let alive=true;onDestroy(()=>{alive=false;});
+ function edit(book:ProductBook|null){selected=book;name=book?.name??'';description=book?.bookDescription??'';error='';editor=true;}
+ async function save(){if(pending)return;pending=true;error='';try{await productService.editBook(selected?.id??null,name,description);if(alive){editor=false;refresh();}}catch{error='词书保存失败，请检查名称后重试。';}finally{pending=false;}}
+ async function mutate(){if(pending||!selected||!confirmation)return;pending=true;error='';try{if(confirmation==='reset')await productService.resetBook(selected.id,true);else await productService.deleteBook(selected.id,true);if(alive){confirmation=null;refresh();}}catch{error='操作未完成，数据已保留，请重试。';}finally{pending=false;}}
 </script>
-<header><h1 tabindex="-1">词书</h1><p class="muted">按等级浏览，找到适合你的词汇。</p></header>
-<ReadStatus status={state.status} empty={state.data?.length === 0} errorMessage="无法加载词书，请重试。" emptyMessage="暂无可浏览的词书" retry={refresh} />
-{#if state.status === "ready" && state.data?.length}
-  <div class="summary"><span>{state.data.length} 本词书</span><span>{total.toLocaleString("zh-CN")} 个单词</span></div>
-  <section class="book-grid" aria-label="内置词书">{#each state.data as book (book.id)}
-    <button class="book" onclick={() => open(book)} aria-label={`打开 ${book.name}，${book.wordCount} 个单词`}><span class="level">{book.jlptLevel}</span><div><h2>{book.name}</h2><p class="muted">{book.wordCount.toLocaleString("zh-CN")} 个单词</p></div><span class="open"><span>浏览词书</span><Icon name="arrow" /></span></button>
-  {/each}</section>
-{/if}
-<style>
-  header p { margin-top:6px; } .summary { margin:24px 0 16px; display:flex; gap:18px; color:var(--text-secondary); font-size:13px; }
-  .book-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; overflow:auto; padding:4px; }
-  .book { padding:24px; display:flex; flex-direction:column; align-items:flex-start; gap:18px; text-align:left; border-radius:var(--radius); min-height:230px; }
-  .level { display:grid; place-items:center; width:56px; height:56px; background:var(--surface-secondary); color:var(--accent); border-radius:12px; font-size:23px; font-weight:600; } .book p { margin-top:4px; }
-  .open { display:flex; align-items:center; justify-content:space-between; width:100%; font-size:13px; color:var(--accent); margin-top:auto; }
-</style>
+<header><div><h1 tabindex="-1">词书</h1><p class="muted">查看词书与真实学习进度。</p></div><button onclick={()=>edit(null)} disabled={pending}>新增词书</button></header>
+<ReadStatus status={view.status} empty={view.data?.length===0} errorMessage="无法加载词书，请重试。" emptyMessage="暂无词书" retry={refresh} />
+{#if view.status==='ready'&&view.data}<p class="summary">{view.data.length} 本词书 · {view.data.reduce((sum,b)=>sum+b.wordCount,0).toLocaleString('zh-CN')} 个单词</p><div class="book-grid">{#each view.data as book (book.id)}<article><button class="open" onclick={()=>open(book)} aria-label={`打开 ${book.name}，${book.wordCount} 个单词`}><span class="level">{book.jlptLevel||'自建'}</span><h2>{book.name}</h2><p class="muted">{book.wordCount.toLocaleString('zh-CN')} 个单词</p><p class="progress">未学习 {book.unlearned} · 复习中 {book.reviewing} · 已熟练 {book.mastered}</p><span class="browse">浏览词书 →</span></button><div class="actions">{#if !book.isBuiltIn}<button onclick={()=>edit(book)} disabled={pending}>编辑</button><button onclick={()=>{selected=book;confirmation='delete';error='';}} disabled={pending}>删除</button>{/if}<button onclick={()=>{selected=book;confirmation='reset';error='';}} disabled={pending||!book.wordCount}>重新学习</button></div></article>{/each}</div>{/if}
+<StudyDialog open={editor} title={selected?'编辑词书':'新增词书'} onclose={()=>{if(!pending)editor=false;}}><form onsubmit={e=>{e.preventDefault();void save();}}><label>词书名称<input bind:value={name} required disabled={pending} /></label><label>词书说明<textarea bind:value={description} disabled={pending}></textarea></label>{#if error}<p role="alert">{error}</p>{/if}<div class="actions"><button type="button" onclick={()=>{editor=false;}} disabled={pending}>取消</button><button type="submit" disabled={pending}>保存</button></div></form></StudyDialog>
+<StudyDialog open={confirmation!==null} title={confirmation==='delete'?'删除词书？':'重新学习这本词书？'} onclose={()=>{if(!pending)confirmation=null;}}><p>{selected?.name}</p><p>{confirmation==='delete'?'词书内的单词、学习进度与复习记录都会删除。':'所有未归档单词的进度将回到未学习。收藏及既有复习记录会保留。'}</p>{#if error}<p role="alert">{error}</p>{/if}<div class="actions"><button onclick={()=>{confirmation=null;}} disabled={pending}>取消</button><button onclick={()=>{void mutate();}} disabled={pending}>{pending?'正在处理…':'确认操作'}</button></div></StudyDialog>
+<style>header{display:flex;justify-content:space-between;gap:12px;align-items:center;}header p{margin-top:6px;}.summary{margin:22px 0 14px;color:var(--text-secondary);font-size:13px;}.book-grid{flex:1;min-height:0;display:grid;align-content:start;grid-auto-rows:max-content;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px;overflow:auto;padding:4px;}article{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden;}.open{padding:20px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;text-align:left;border:0;width:100%;min-height:240px;}.level{display:grid;place-items:center;width:52px;height:52px;background:var(--surface-secondary);color:var(--accent);border-radius:10px;font-size:22px;font-weight:600;}h2{font-size:18px;overflow-wrap:anywhere;}.progress{font-size:12px;color:var(--text-secondary);}.browse{color:var(--accent);margin-top:auto;font-size:13px;}.actions{display:flex;flex-wrap:wrap;gap:8px;padding:10px;}.actions button{padding:6px 8px;font-size:12px;}form{display:flex;flex-direction:column;gap:12px;min-width:min(350px,calc(100vw - 100px));}label{display:flex;flex-direction:column;gap:5px;}textarea{font:inherit;background:var(--surface);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:8px;min-height:70px;}[role=alert]{color:var(--danger);}</style>

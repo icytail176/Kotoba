@@ -1,4 +1,7 @@
 pub mod db;
+pub mod lexical;
+mod product;
+pub mod settings;
 pub mod srs;
 pub mod study;
 pub mod vocabulary;
@@ -18,7 +21,7 @@ fn app_info() -> AppInfo {
     AppInfo {
         name: "Kotoba",
         platform: std::env::consts::OS,
-        phase: 6,
+        phase: 7,
     }
 }
 
@@ -89,6 +92,7 @@ fn word_detail(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let directory = app.path().app_data_dir()?;
             // Explicit isolated data for development/manual session audits only.
@@ -113,10 +117,36 @@ pub fn run() -> tauri::Result<()> {
             let now = i64::try_from(micros)
                 .map_err(|_| db::DatabaseError::InvalidData("system clock out of range"))?;
             database.import_builtin(&manifest, db::models::Timestamp(now))?;
+            app.manage(Mutex::new(
+                settings::SettingsStore::open(&directory).map_err(std::io::Error::other)?,
+            ));
+            app.manage(Mutex::new(product::files::Staging::default()));
             app.manage(Mutex::new(database));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            product::product_editor_preview,
+            product::product_words,
+            product::product_books,
+            product::product_detail,
+            product::product_filter_options,
+            product::product_history,
+            product::product_reset_word,
+            product::product_reset_book,
+            product::product_edit_word,
+            product::product_delete_word,
+            product::product_edit_book,
+            product::product_delete_book,
+            product::product_forecast,
+            product::product_statistics,
+            product::product_random_example,
+            product::product_settings,
+            product::product_save_settings,
+            product::files::product_export_quality,
+            product::files::product_pick_import,
+            product::files::product_confirm_import,
+            product::files::product_cancel_import,
+            product::files::product_export_file,
             app_info,
             database_info,
             browse_books,

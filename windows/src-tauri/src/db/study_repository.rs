@@ -7,6 +7,13 @@ impl Database {
         let book_id = word.word_book_id.ok_or_else(StudyError::invalid)?;
         let book = self.fetch_book(book_id)?.ok_or_else(StudyError::invalid)?;
         Ok(super::WordDetail {
+            romaji: crate::lexical::romaji(&word.kana),
+            pitch: crate::lexical::pitch(&word.tags),
+            conjugation: crate::lexical::conjugation::generate(
+                &word.japanese,
+                &word.kana,
+                &word.part_of_speech,
+            ),
             word: super::ui_reads::WordListItem {
                 id: word.id,
                 expression: word.japanese.clone(),

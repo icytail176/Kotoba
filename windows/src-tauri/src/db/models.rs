@@ -73,7 +73,7 @@ text_enum!(LearningState { New => "new", Learning => "learning", Relearning => "
 text_enum!(ReviewRating { Again => "again", Hard => "hard", Good => "good", Easy => "easy" });
 text_enum!(ReviewErrorType { Meaning => "meaning", Reading => "reading", Spelling => "spelling", ExpressionDirection => "expressionDirection", ReadingDirection => "readingDirection" });
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WordBook {
     pub id: Id,
@@ -86,7 +86,7 @@ pub struct WordBook {
     pub canonical_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VocabularyWord {
     pub id: Id,
@@ -126,7 +126,7 @@ pub struct LearningProgress {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewLog {
     pub id: Id,

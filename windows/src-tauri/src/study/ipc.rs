@@ -32,6 +32,7 @@ pub(crate) fn study_start(
     book_id: Id,
     mode: SessionMode,
     new_limit: u32,
+    settings: tauri::State<'_, Mutex<crate::settings::SettingsStore>>,
     review_limit: u32,
     database: tauri::State<'_, Mutex<Database>>,
 ) -> Result<SessionStart> {
@@ -46,7 +47,14 @@ pub(crate) fn study_start(
         QueuePolicy {
             new_limit,
             review_limit,
-            randomizes: true,
+            randomizes: settings
+                .lock()
+                .map_err(|_| StudyError {
+                    code: "save",
+                    message: "本地设置暂时不可用。",
+                })?
+                .get()
+                .randomizes_study_order,
         },
         context.name,
     )

@@ -1,12 +1,20 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { Snippet } from "svelte";
+  import {dispatchPageKey,CompositionGuard} from "../study/keyboard.ts";
+  import KeyboardHelp from "../product/KeyboardHelp.svelte";
+  import StudyDialog from "../study/StudyDialog.svelte";
+  let help=$state(false);
+  const ime=new CompositionGuard();
+  function keydown(event:KeyboardEvent){if(selected==="今日学习")return;const target=event.target as HTMLElement|null;const command=dispatchPageKey(event,{editing:!!target?.closest("input,textarea,select,[contenteditable=true]"),composing:ime.active,dialog:!!document.querySelector("dialog[open]"),pending:false,platform:navigator.platform.toLowerCase().includes("mac")?"mac":"windows"});if(command==="help"){event.preventDefault();help=true;}else if(command==="search"){const input=document.querySelector<HTMLInputElement>("main input[type=search]");if(input){event.preventDefault();input.focus();}}}
   import Icon from "$lib/components/Icon.svelte";
   import "../styles/tokens.css";
   let { selected, onselect, children }: { selected: string; onselect: (section: string) => void; children: Snippet } = $props();
   const sections = [{name:"今日学习",icon:"home"},{name:"单词管理",icon:"words"},{name:"词书",icon:"books"},{name:"学习统计",icon:"chart"},{name:"五十音图",icon:"kana"},{name:"设置",icon:"settings"}];
   async function navigate(name: string) { onselect(name); await tick(); document.querySelector<HTMLElement>("main h1")?.focus(); }
 </script>
+<svelte:window onkeydown={keydown} oncompositionstart={()=>ime.start()} oncompositionend={()=>ime.end()} />
+<StudyDialog open={help} title="快捷键帮助" onclose={()=>{help=false;}}><KeyboardHelp /><button onclick={()=>{help=false;}}>关闭</button></StudyDialog>
 <a class="skip" href="#content">跳到主要内容</a>
 <div class="shell">
   <aside class="sidebar">

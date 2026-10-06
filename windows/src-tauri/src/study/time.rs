@@ -28,6 +28,11 @@ impl LocalTimeContextProvider for SystemLocalTimeContextProvider {
                 .checked_add(65 * DAY_MICROS)
                 .ok_or_else(StudyError::timezone)?,
         );
+        self.context_between(start, end)
+    }
+}
+impl SystemLocalTimeContextProvider {
+    pub fn context_between(&self, start: Timestamp, end: Timestamp) -> Result<LocalTimeContext> {
         #[cfg(target_os = "macos")]
         {
             macos::context(start, end)

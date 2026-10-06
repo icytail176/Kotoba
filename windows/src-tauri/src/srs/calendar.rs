@@ -107,6 +107,16 @@ impl CalendarContext {
         }
         Err(SrsError::CalendarCoverage)
     }
+    pub fn day_index(&self, now: Timestamp) -> Result<i64> {
+        Ok(self.local(now)?.div_euclid(DAY_MICROS))
+    }
+    pub fn day_start(&self, now: Timestamp) -> Result<Timestamp> {
+        self.resolve(
+            self.day_index(now)?
+                .checked_mul(DAY_MICROS)
+                .ok_or(SrsError::DateOverflow)?,
+        )
+    }
     pub fn add_days(&self, now: Timestamp, days: i64) -> Result<Timestamp> {
         let duration = days.checked_mul(DAY_MICROS).ok_or(SrsError::DateOverflow)?;
         let target = self

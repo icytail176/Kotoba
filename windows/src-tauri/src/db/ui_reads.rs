@@ -47,6 +47,9 @@ pub struct WordDetail {
     pub example_chinese: String,
     pub tags: Vec<String>,
     pub loanword: Option<LoanwordSource>,
+    pub romaji: String,
+    pub pitch: Option<crate::lexical::Pitch>,
+    pub conjugation: Option<crate::lexical::conjugation::Conjugation>,
     pub learning_status: crate::srs::models::LearningStatusPresentation,
 }
 const JOIN: &str = "FROM vocabulary_words w JOIN word_books b ON b.id=w.word_book_id";
@@ -181,7 +184,7 @@ impl Database {
         })
     }
     pub fn word_detail(&self, id: Id) -> Result<Option<WordDetail>> {
-        let sql=format!("SELECT {COLUMNS},w.part_of_speech,w.example_japanese,w.example_chinese,w.tags,w.loanword_source_term,w.loanword_source_language_code,w.loanword_is_wasei,w.loanword_is_partial,p.state {JOIN} LEFT JOIN learning_progress p ON p.word_id=w.id WHERE {BUILTIN} AND w.id=?1");
+        let sql=format!("SELECT {COLUMNS},w.part_of_speech,w.example_japanese,w.example_chinese,w.tags,w.loanword_source_term,w.loanword_source_language_code,w.loanword_is_wasei,w.loanword_is_partial,p.state {JOIN} LEFT JOIN learning_progress p ON p.word_id=w.id WHERE w.is_archived=0 AND w.id=?1");
         let detail = self
             .connection
             .query_row(&sql, [id], |row| {
@@ -194,6 +197,13 @@ impl Database {
                     )
                 })?;
                 Ok(WordDetail {
+                    romaji: crate::lexical::romaji(&row.get::<_, String>(2)?),
+                    pitch: crate::lexical::pitch(&tags),
+                    conjugation: crate::lexical::conjugation::generate(
+                        &row.get::<_, String>(1)?,
+                        &row.get::<_, String>(2)?,
+                        &row.get::<_, String>(7)?,
+                    ),
                     word: item(row)?,
                     part_of_speech: row.get(7)?,
                     example_japanese: row.get(8)?,

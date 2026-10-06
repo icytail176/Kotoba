@@ -66,7 +66,7 @@ pub(super) fn context(start: Timestamp, end: Timestamp) -> Result<LocalTimeConte
     let initial = offset(zone.0, absolute(start))?;
     let mut cursor = absolute(start);
     let mut transitions = Vec::new();
-    for _ in 0..32 {
+    for _ in 0..2048 {
         // SAFETY: retained timezone, finite Core Foundation absolute timestamp.
         let next = unsafe { CFTimeZoneGetNextDaylightSavingTimeTransition(zone.0, cursor) };
         if next == 0.0 || next >= absolute(end) {
@@ -82,7 +82,7 @@ pub(super) fn context(start: Timestamp, end: Timestamp) -> Result<LocalTimeConte
         });
         cursor = next + 1.0;
     }
-    if transitions.len() == 32 {
+    if transitions.len() == 2048 {
         return Err(StudyError::timezone());
     }
     Ok(LocalTimeContext {

@@ -28,6 +28,7 @@ export interface ViewState {
     index: number;
     total: number;
     revealed: boolean;
+    cardPage: number;
     pending: boolean;
     error: string | null;
     errorCode: string | null;
@@ -57,6 +58,7 @@ export class StudySessionController {
     cards: Card[] = [];
     index = 0;
     revealed = false;
+    cardPage = 0;
     pending = false;
     error: string | null = null;
     errorCode: string | null = null;
@@ -77,7 +79,7 @@ export class StudySessionController {
     private completed: () => void;
     constructor(service: StudyService, changed: (state: ViewState) => void, clock: () => number = () => Date.now() * 1000, shuffle: (q: Question[]) => Question[] = items => items, completed: () => void = () => { }) { this.service = service; this.changed = changed; this.clock = clock; this.shuffle = shuffle; this.completed = completed; }
     get card(): Card | null { return this.cards[this.index] ?? null; }
-    snapshot(): ViewState { const s = this.spelling; return { phase: this.phase, card: this.card, index: this.index, total: this.cards.length, revealed: this.revealed, pending: this.pending, error: this.error, errorCode: this.errorCode, retryKind: this.attempt ? "rating" : this.spellingEntries ? "spelling" : null, exitDialog: this.exitDialog, helpDialog: this.helpDialog, question: s?.current ?? null, answer: s?.answer ?? "", locked: s?.locked ?? false, feedback: s?.feedback ?? null, hint: s?.hint ?? false, requeued: s?.requeued ?? false, summary: this.phase === "summary" ? this.summary() : null, timezone: this.timezone }; }
+    snapshot(): ViewState { const s = this.spelling; return { phase: this.phase, card: this.card, index: this.index, total: this.cards.length, revealed: this.revealed, cardPage: this.cardPage, pending: this.pending, error: this.error, errorCode: this.errorCode, retryKind: this.attempt ? "rating" : this.spellingEntries ? "spelling" : null, exitDialog: this.exitDialog, helpDialog: this.helpDialog, question: s?.current ?? null, answer: s?.answer ?? "", locked: s?.locked ?? false, feedback: s?.feedback ?? null, hint: s?.hint ?? false, requeued: s?.requeued ?? false, summary: this.phase === "summary" ? this.summary() : null, timezone: this.timezone }; }
     private emit() { this.changed(this.snapshot()); }
     async start(bookId: string, mode: Mode, newLimit = 10, reviewLimit = 20) {
         if (this.pending || !["idle", "cancelled", "completed", "emptyQueue", "error"].includes(this.phase))
@@ -180,7 +182,7 @@ export class StudySessionController {
         outcome.mastered = true;
         this.cards = this.cards.filter((c, i) => i <= this.index || c.word.id !== card.word.id);
     } this.advance(); }
-    private advance() { this.index++; this.revealed = false; if (this.index < this.cards.length) {
+    private advance() { this.index++; this.revealed = false; this.cardPage = 0; if (this.index < this.cards.length) {
         this.phase = this.outcomes.has(this.card?.word.id ?? "") ? "flashcardRetry" : "flashcard";
     }
     else {
@@ -247,6 +249,7 @@ export class StudySessionController {
     continueLearning() { this.exitDialog = false; this.leave = null; this.emit(); }
     confirmExit() { if (!this.exitDialog || this.pending)
         return; const leave = this.leave; this.cancel(); leave?.(); }
+    page(direction: -1|1) { if (this.isCard() && this.revealed && !this.pending && !this.attempt && !this.exitDialog && !this.helpDialog && (this.card?.word.conjugation?.forms.length ?? 0)>1) { this.cardPage = Math.max(0,Math.min(1,this.cardPage+direction)); this.emit(); } }
     showHelp() { if (!this.pending && !this.exitDialog) {
         this.helpDialog = true;
         this.emit();
@@ -256,7 +259,7 @@ export class StudySessionController {
         return; this.didFinish = true; this.phase = "completed"; this.emit(); this.completed(); }
     cancel() { if (this.pending)
         return; this.generation++; this.reset(); this.phase = "cancelled"; this.emit(); }
-    private reset() { this.cards = []; this.index = 0; this.revealed = false; this.error = null; this.errorCode = null; this.attempt = null; this.spellingEntries = null; this.spelling = null; this.outcomes.clear(); this.exitDialog = false; this.helpDialog = false; this.leave = null; this.didFinish = false; }
+    private reset() { this.cards = []; this.index = 0; this.revealed = false; this.cardPage = 0; this.error = null; this.errorCode = null; this.attempt = null; this.spellingEntries = null; this.spelling = null; this.outcomes.clear(); this.exitDialog = false; this.helpDialog = false; this.leave = null; this.didFinish = false; }
     private fail(e: unknown, fallback: string) { const value = e as {
         code?: string;
         message?: string;
