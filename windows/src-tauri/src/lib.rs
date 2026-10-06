@@ -1,5 +1,6 @@
 pub mod db;
 pub mod srs;
+pub mod study;
 pub mod vocabulary;
 
 use std::sync::Mutex;
@@ -17,7 +18,7 @@ fn app_info() -> AppInfo {
     AppInfo {
         name: "Kotoba",
         platform: std::env::consts::OS,
-        phase: 5,
+        phase: 6,
     }
 }
 
@@ -90,6 +91,19 @@ pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .setup(|app| {
             let directory = app.path().app_data_dir()?;
+            // Explicit isolated data for development/manual session audits only.
+            // Release builds always use the normal Tauri app-data directory.
+            #[cfg(debug_assertions)]
+            let directory = match std::env::var_os("KOTOBA_TEST_APP_DATA") {
+                Some(path) => {
+                    let path = std::path::PathBuf::from(path);
+                    if !path.is_absolute() {
+                        return Err("test app-data path must be absolute".into());
+                    }
+                    path
+                }
+                None => directory,
+            };
             let mut database = db::Database::open_app_data(&directory)?;
             let manifest = vocabulary::Manifest::embedded()?;
             let micros = std::time::SystemTime::now()
@@ -108,7 +122,13 @@ pub fn run() -> tauri::Result<()> {
             browse_books,
             browse_words,
             browse_search,
-            word_detail
+            word_detail,
+            study::ipc::study_availability,
+            study::ipc::study_start,
+            study::ipc::study_formal,
+            study::ipc::study_reinforcement_mastered,
+            study::ipc::study_favorite,
+            study::ipc::study_enrich
         ])
         .run(tauri::generate_context!())
 }

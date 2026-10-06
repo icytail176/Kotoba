@@ -1,12 +1,12 @@
 # Kotoba Windows Client
 
-Status: Phase 5 — SRS scheduler, atomic review persistence and automatic mastery; product UI remains read-only vocabulary browsing.
+Status: Phase 6 — Today Study, atomic formal ratings, reinforcement, two-stage spelling and keyboard/IME safety.
 
-Technology: Tauri 2, Svelte 5, TypeScript and Rust. SvelteKit uses the static adapter and Vite. No new dependencies are introduced for Phase 4.
+Technology: Tauri 2, Svelte 5, TypeScript and Rust. SvelteKit uses the static adapter and Vite. No new dependencies are introduced for Phase 6.
 
 ## Product UI
 
-The Simplified Chinese sidebar contains 今日学习、单词管理、词书、学习统计、五十音图、设置. Word management, wordbooks and word details are implemented; the other pages explicitly explain that their functionality comes in a later phase.
+The Simplified Chinese sidebar contains 今日学习、单词管理、词书、学习统计、五十音图、设置. Today Study, vocabulary browsing, wordbooks and word details are implemented; statistics, kana chart and settings remain explicitly marked for a later phase.
 
 Browse all 10,609 built-in words or one of five JLPT books, 50 words per page. Search expression, reading or Chinese meaning through SQLite, with a 250 ms debounce and stale-response protection. Clearing search returns to initial browsing. Details show existing lexical content and optional examples, tags and permitted loanword sources. Chinese-origin source metadata remains stored but hidden in the UI, matching the current Mac presentation policy.
 
@@ -49,6 +49,12 @@ SQLite Schema 2 is initialized through Rust in the Tauri OS app-data directory a
 
 Canonical identity is **READY** and Windows mapping is **IMPLEMENTED**; Mac mapping is **NOT IMPLEMENTED**. See [shared identity rules](../shared/vocabulary/README.md), [the data contract](docs/CROSS_PLATFORM_DATA_CONTRACT.md), [Phase 3 report](PHASE_3_REPORT.md) and [Phase 4 report](PHASE_4_REPORT.md).
 
-Phase 5 adds pure Rust scheduling with explicit clock/calendar context, formal review transactions, manual/automatic mastery, bounded history and eligible/due reads. The transaction service requires an expected-progress snapshot to detect stale duplicate callbacks and returns only after commit succeeds. No rating mutation IPC or product scoring buttons are exposed yet. Details add only actual read-only learning-status presentation. See [SRS parity specification](docs/SRS_PARITY_SPEC.md) and [Phase 5 report](PHASE_5_REPORT.md).
+Phase 5 supplies the pure scheduler and atomic review/mastery service. Phase 6 adds typed study IPC, native OS timezone providers, a session controller, separate L/new and R/review entry points, session-only reinforcement, two-stage spelling, favorite persistence, original-log enrichment and an exactly-once summary. Schema remains 2 and all earlier tests are retained. See [SRS parity](docs/SRS_PARITY_SPEC.md), [study parity](docs/STUDY_SESSION_PARITY_SPEC.md) and [Phase 6 report](PHASE_6_REPORT.md).
 
-Phase 5 does not implement StudySession, reinforcement, spelling, statistics, sync, auth, CSV import or vocabulary-edit/reset UI. The future session must supply the user's complete native timezone rules to the explicit calendar context. Pitch and romaji presentation parity are pending. Existing macOS source, tests, project files and resources are unchanged.
+For mutation audits, development builds accept an explicit absolute `KOTOBA_TEST_APP_DATA` directory; release builds always use normal app data:
+
+```sh
+KOTOBA_TEST_APP_DATA=/private/tmp/kotoba-study-audit npm run tauri dev
+```
+
+Phase 6 does not add statistics, sync, auth, CSV, backup or vocabulary editing/reset. Pitch, romaji, speech and conjugation presentation parity remain pending. Existing macOS source, tests, project files, shared vocabulary and lockfiles are unchanged.

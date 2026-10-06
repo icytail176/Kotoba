@@ -1,0 +1,482 @@
+[
+  {
+    "answer": "　Ａ B　",
+    "normalizedExpected": "AB",
+    "normalizedAnswer": "AB",
+    "expected": "AB",
+    "direction": "meaningToExpression",
+    "correct": true
+  },
+  {
+    "direction": "expressionToReading",
+    "expected": "AB",
+    "normalizedExpected": "AB",
+    "correct": false,
+    "answer": "　Ａ B　",
+    "normalizedAnswer": "AB"
+  },
+  {
+    "normalizedExpected": "がくせい",
+    "expected": "がくせい",
+    "answer": " ｶﾞｸ ｾｲ ",
+    "correct": false,
+    "direction": "meaningToExpression",
+    "normalizedAnswer": "ガクセイ"
+  },
+  {
+    "direction": "expressionToReading",
+    "normalizedExpected": "がくせい",
+    "normalizedAnswer": "がくせい",
+    "answer": " ｶﾞｸ ｾｲ ",
+    "correct": false,
+    "expected": "がくせい"
+  },
+  {
+    "normalizedExpected": "かたかな",
+    "answer": "カタカナ",
+    "correct": false,
+    "expected": "かたかな",
+    "direction": "meaningToExpression",
+    "normalizedAnswer": "カタカナ"
+  },
+  {
+    "normalizedExpected": "かたかな",
+    "direction": "expressionToReading",
+    "normalizedAnswer": "かたかな",
+    "answer": "カタカナ",
+    "expected": "かたかな",
+    "correct": true
+  },
+  {
+    "normalizedAnswer": "コーヒー",
+    "normalizedExpected": "こーひー",
+    "correct": false,
+    "expected": "こーひー",
+    "answer": "コーヒー",
+    "direction": "meaningToExpression"
+  },
+  {
+    "expected": "こーひー",
+    "answer": "コーヒー",
+    "normalizedAnswer": "こーひー",
+    "normalizedExpected": "こーひー",
+    "correct": true,
+    "direction": "expressionToReading"
+  },
+  {
+    "normalizedAnswer": "ガ",
+    "answer": "ｶﾞ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "expected": "が",
+    "correct": false
+  },
+  {
+    "answer": "ｶﾞ",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "が",
+    "normalizedAnswer": "が",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "correct": true,
+    "expected": "が"
+  },
+  {
+    "answer": "が",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": true,
+    "expected": "が"
+  },
+  {
+    "answer": "ヷ",
+    "normalizedAnswer": "ヷ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "わ",
+    "correct": false,
+    "expected": "わ"
+  },
+  {
+    "answer": "ヷ",
+    "normalizedAnswer": "ヷ",
+    "direction": "expressionToReading",
+    "normalizedExpected": "わ",
+    "correct": false,
+    "expected": "わ"
+  },
+  {
+    "answer": "gakusei",
+    "normalizedAnswer": "gakusei",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "がくせい",
+    "correct": false,
+    "expected": "がくせい"
+  },
+  {
+    "answer": "gakusei",
+    "normalizedAnswer": "gakusei",
+    "direction": "expressionToReading",
+    "normalizedExpected": "がくせい",
+    "correct": false,
+    "expected": "がくせい"
+  },
+  {
+    "answer": "食べる",
+    "normalizedAnswer": "食べる",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "たべる",
+    "correct": false,
+    "expected": "たべる"
+  },
+  {
+    "answer": "食べる",
+    "normalizedAnswer": "食べる",
+    "direction": "expressionToReading",
+    "normalizedExpected": "たべる",
+    "correct": false,
+    "expected": "たべる"
+  },
+  {
+    "answer": "",
+    "normalizedAnswer": "",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "",
+    "correct": true,
+    "expected": ""
+  },
+  {
+    "answer": "",
+    "normalizedAnswer": "",
+    "direction": "expressionToReading",
+    "normalizedExpected": "",
+    "correct": false,
+    "expected": ""
+  },
+  {
+    "answer": " \n\t ",
+    "normalizedAnswer": "",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "",
+    "correct": true,
+    "expected": ""
+  },
+  {
+    "answer": " \n\t ",
+    "normalizedAnswer": "",
+    "direction": "expressionToReading",
+    "normalizedExpected": "",
+    "correct": false,
+    "expected": ""
+  },
+  {
+    "answer": "​かな​",
+    "normalizedAnswer": "かな",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": "​かな​",
+    "normalizedAnswer": "かな",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": "﻿かな﻿",
+    "normalizedAnswer": "﻿かな﻿",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "﻿かな﻿",
+    "normalizedAnswer": "﻿かな﻿",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "かな",
+    "normalizedAnswer": "かな",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": "かな",
+    "normalizedAnswer": "かな",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": " かな ",
+    "normalizedAnswer": "かな",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": " かな ",
+    "normalizedAnswer": "かな",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": true,
+    "expected": "かな"
+  },
+  {
+    "answer": "か\tな",
+    "normalizedAnswer": "か\tな",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "か\tな",
+    "normalizedAnswer": "か\tな",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "か\nな",
+    "normalizedAnswer": "か\nな",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "か\nな",
+    "normalizedAnswer": "か\nな",
+    "direction": "expressionToReading",
+    "normalizedExpected": "かな",
+    "correct": false,
+    "expected": "かな"
+  },
+  {
+    "answer": "ガ",
+    "normalizedAnswer": "ガ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "ガ",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": true,
+    "expected": "が"
+  },
+  {
+    "answer": "㍿",
+    "normalizedAnswer": "株式会社",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "株式会社",
+    "correct": true,
+    "expected": "株式会社"
+  },
+  {
+    "answer": "㍿",
+    "normalizedAnswer": "株式会社",
+    "direction": "expressionToReading",
+    "normalizedExpected": "株式会社",
+    "correct": false,
+    "expected": "株式会社"
+  },
+  {
+    "answer": "神",
+    "normalizedAnswer": "神",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "神",
+    "correct": true,
+    "expected": "神"
+  },
+  {
+    "answer": "神",
+    "normalizedAnswer": "神",
+    "direction": "expressionToReading",
+    "normalizedExpected": "神",
+    "correct": false,
+    "expected": "神"
+  },
+  {
+    "answer": "ｶ゙",
+    "normalizedAnswer": "ガ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "ｶ゙",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": true,
+    "expected": "が"
+  },
+  {
+    "answer": "カﾞ",
+    "normalizedAnswer": "ガ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "カﾞ",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "ｶﾞ",
+    "normalizedAnswer": "ガ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "ガ",
+    "correct": true,
+    "expected": "ガ"
+  },
+  {
+    "answer": "ｶﾞ",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "ガ"
+  },
+  {
+    "answer": "ﾊﾟ",
+    "normalizedAnswer": "パ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "ぱ",
+    "correct": false,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "ﾊﾟ",
+    "normalizedAnswer": "ぱ",
+    "direction": "expressionToReading",
+    "normalizedExpected": "ぱ",
+    "correct": false,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "ハﾟ",
+    "normalizedAnswer": "パ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "ぱ",
+    "correct": false,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "ハﾟ",
+    "normalizedAnswer": "ぱ",
+    "direction": "expressionToReading",
+    "normalizedExpected": "ぱ",
+    "correct": false,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "ｶ゚",
+    "normalizedAnswer": "カ゚",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "か",
+    "correct": false,
+    "expected": "か"
+  },
+  {
+    "answer": "ｶ゚",
+    "normalizedAnswer": "か゚",
+    "direction": "expressionToReading",
+    "normalizedExpected": "か",
+    "correct": false,
+    "expected": "か"
+  },
+  {
+    "answer": "ガ",
+    "normalizedAnswer": "ガ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "が",
+    "correct": false,
+    "expected": "が"
+  },
+  {
+    "answer": "ガ",
+    "normalizedAnswer": "が",
+    "direction": "expressionToReading",
+    "normalizedExpected": "が",
+    "correct": true,
+    "expected": "が"
+  },
+  {
+    "answer": "パ",
+    "normalizedAnswer": "パ",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "ぱ",
+    "correct": false,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "パ",
+    "normalizedAnswer": "ぱ",
+    "direction": "expressionToReading",
+    "normalizedExpected": "ぱ",
+    "correct": true,
+    "expected": "ぱ"
+  },
+  {
+    "answer": "ﾞ",
+    "normalizedAnswer": "゙",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "゙",
+    "correct": true,
+    "expected": "゙"
+  },
+  {
+    "answer": "ﾞ",
+    "normalizedAnswer": "゙",
+    "direction": "expressionToReading",
+    "normalizedExpected": "゙",
+    "correct": false,
+    "expected": "゙"
+  },
+  {
+    "answer": "ﾟ",
+    "normalizedAnswer": "゚",
+    "direction": "meaningToExpression",
+    "normalizedExpected": "゚",
+    "correct": true,
+    "expected": "゚"
+  },
+  {
+    "answer": "ﾟ",
+    "normalizedAnswer": "゚",
+    "direction": "expressionToReading",
+    "normalizedExpected": "゚",
+    "correct": false,
+    "expected": "゚"
+  }
+]

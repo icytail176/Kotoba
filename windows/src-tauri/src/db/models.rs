@@ -2,7 +2,7 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use std::fmt;
 
 /// An externally supplied entity UUID, not a built-in lexical identity generator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct Id(uuid::Uuid);
 
@@ -36,7 +36,7 @@ impl FromSql for Id {
 }
 
 /// Signed UTC microseconds since 1970-01-01T00:00:00Z. Never locale text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct Timestamp(pub i64);
 impl ToSql for Timestamp {
@@ -52,7 +52,7 @@ impl FromSql for Timestamp {
 
 macro_rules! text_enum {
     ($name:ident { $($variant:ident => $raw:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub enum $name { $($variant),+ }
         impl $name {
@@ -111,7 +111,7 @@ pub struct VocabularyWord {
     pub canonical_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LearningProgress {
     pub id: Id,
