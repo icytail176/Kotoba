@@ -47,3 +47,23 @@ Schema 2 already represents required learning, history, custom lexical and book 
 Mac Backup V3 relies on random local UUIDs and does not export canonical ID/key. Windows cannot safely identify all builtin duplicates across these graphs. Windows local backup therefore uses an explicit different format/version and validates canonical relationships against the embedded manifest and local graph. Mac files are rejected before mutation. CROSS-PLATFORM BACKUP remains NOT READY; an adapter would require trustworthy Mac canonical mapping first.
 
 Final implementations, validation and remaining gaps are recorded in `windows/PHASE_7_REPORT.md`; the initial matrix above remains the starting audit, not a claim of completed features.
+
+## Final implementation audit
+
+All initial NOT IMPLEMENTED/PARTIAL product rows above now have implementations and passing deterministic tests. Final feature states:
+
+| Final group | Status |
+| --- | --- |
+| Romaji/pitch/loanword/conjugation | READY |
+| SQLite filters/difficult/sort/detail/history | READY |
+| Word reset, book relearn, word/custom-book CRUD | READY |
+| Forecast, home examples and 7/30-day statistics | READY |
+| Kana/settings/shared keyboard help | READY |
+| CSV import/export/quality reporting | READY |
+| Windows-local four-entity backup/restore | READY |
+| Mac Backup V3 interchange | NOT READY |
+| Phase 6 automated regression | READY |
+| Physical Windows runtime/Microsoft IME | NOT TESTED |
+| Speech/cloud/auth/sync | NOT APPLICABLE |
+
+The actual final matrix, deliberate platform differences, native acceptance limits and CI evidence are in [PHASE_7_REPORT.md](../PHASE_7_REPORT.md). Overall product parity is PARTIAL; Windows-local backup readiness is not a claim of Mac interchange. Native Japanese marked-text search, both spelling rounds and commit-versus-validation Enter were observed after the lock cleared; exact native audit evidence is recorded in the report.
