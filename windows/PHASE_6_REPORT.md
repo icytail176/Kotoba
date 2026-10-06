@@ -10,8 +10,9 @@ Recovery classification before continuation: COMPLETE — Phase 5 scheduler/muta
 
 - Branch: `feature/windows-client`.
 - Starting HEAD: `a0f640a3d87087da8154e45f53378cd879ea4bac`.
-- Implementation commit(s): pending implementation commit after local validation.
-- Final implementation HEAD: pending.
+- Implementation commit: `110b9229fdb220f93b408f91c137547335d2ed5c` — Implement Windows study session and spelling flow.
+- Final implementation HEAD: `110b9229fdb220f93b408f91c137547335d2ed5c` (no CI source repair was needed).
+- A subsequent report-only commit records the verified results below; it does not change the implementation. Normal push is used and CI remains enabled.
 - Changes are restricted to `windows/**`; workflow, dependencies, locks, canonical vocabulary and Schema 2 remain unchanged.
 
 ## macOS StudySession Audit
@@ -104,11 +105,15 @@ All pre-existing tests remain. Phase 6 adds 14 cross-platform Rust tests and two
 
 ## Windows CI
 
-Pending implementation commit/push and completed Windows verification. Required gates remain enabled: npm ci, check, frontend tests/build, manifest/Python, cargo fmt/check/clippy/tests, Tauri Windows build, release embedded-manifest probe, output verification and artifact upload. Queued/running is not success.
+Implementation CI: **completed / success** on 2026-10-06; run **37403092828**, [GitHub run](https://github.com/icytail176/Kotoba/actions/runs/37403092828), head `110b9229fdb220f93b408f91c137547335d2ed5c`. The Windows MSVC job completed in 11m48s. Actual downloaded run metadata and logs were checked against the exact implementation SHA and all required successful steps.
+
+All gates passed: npm ci, Svelte check (0 errors/warnings), frontend tests (37 passed / 0 failed), frontend build, manifest validation (10,609/no drift), Python tooling (11 passed), cargo fmt, cargo check, cargo clippy with warnings denied, cargo test (**80 passed / 0 failed**, including **16 Phase 6 study/native-timezone tests**), Tauri Windows build, release embedded-manifest probe outside the repository, output verification and artifact upload.
+
+Generated nonempty outputs: EXE 15,998,464 bytes; MSI 5,345,280 bytes; NSIS installer 3,437,498 bytes. Artifact `kotoba-windows-phase1` successfully uploaded (existing workflow artifact name), ID 11386502316. This certifies the Windows native build/tests and release resource probe, not a physical interactive Windows/IME audit.
 
 ## Parity
 
-MAC/WINDOWS STUDY FLOW PARITY: **NOT READY until Windows CI succeeds**.
+MAC/WINDOWS STUDY FLOW PARITY: **READY**, within the explicitly documented Phase 6 flow scope and physical-runtime limitations.
 
 ## macOS Isolation
 
@@ -120,4 +125,4 @@ Physical Windows runtime and Microsoft IME are not tested; Windows signing is no
 
 ## Phase 6 Result
 
-**NEEDS FIXES / verification pending** until completed successful Windows CI is recorded below.
+**PASS**. Existing partial work was recovered/reused; full local gates and implementation Windows CI passed; the native Mac session/Japanese IME audits passed for the observed flows. Physical Windows runtime and Microsoft IME remain **NOT TESTED**.
